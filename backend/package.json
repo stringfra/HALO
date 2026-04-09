@@ -1,0 +1,26 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "HALO backend API server",
+  "main": "src/server.js",
+  "scripts": {
+    "repair-tenant-rbac": "node --env-file=.env scripts/repair-tenant-rbac.js",
+    "rbac:check:all": "node --env-file=.env scripts/repair-tenant-rbac.js --all --mode check",
+    "rbac:repair:all": "node --env-file=.env scripts/repair-tenant-rbac.js --all --mode repair",
+    "platform:health-check": "node --env-file=.env scripts/platform-health-check.js",
+    "qa:smoke:standard-flows": "node --env-file=.env scripts/qa-smoke-standard-flows.js",
+    "dev": "node --watch --env-file=.env src/server.js",
+    "start": "node --env-file=.env src/server.js",
+    "test": "node --test tests/**/*.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.20.0"
+  }
+}

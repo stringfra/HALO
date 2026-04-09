@@ -1,0 +1,367 @@
+@import "tailwindcss";
+@import "react-big-calendar/lib/css/react-big-calendar.css";
+
+@font-face {
+  font-family: "freedom";
+  src:
+    url("/fonts/freedom.woff") format("woff"),
+    url("/fonts/freedom.ttf") format("truetype"),
+    url("/fonts/freedom.svg#freedom") format("svg");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  --ui-bg: #f5f6f7;
+  --ui-bg-glow: #f5f6f7;
+  --ui-text: #2d3138;
+  --ui-muted: #8f949c;
+  --ui-border: #e7eaee;
+  --ui-panel: rgba(255, 255, 255, 0.92);
+  --ui-panel-solid: #ffffff;
+  --ui-accent: #57c27f;
+  --ui-accent-soft: #ecf8f0;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 0.95rem;
+  --radius-xxl: 1.2rem;
+  --shadow-soft: 0 10px 26px -22px rgba(19, 27, 39, 0.25);
+  --shadow-panel: 0 14px 30px -26px rgba(19, 27, 39, 0.28);
+  --status-success-bg: #edf8f1;
+  --status-success-text: #57c27f;
+  --status-warning-bg: #fff4e9;
+  --status-warning-text: #d98a35;
+  --status-danger-bg: #feeeed;
+  --status-danger-text: #e07d7d;
+  --status-info-bg: #eef3f8;
+  --status-info-text: #7a8796;
+
+  /* Sidebar tokens from screenshot target */
+  --sidebar-font-family: var(--font-ui);
+
+  --sidebar-width-expanded: 10rem;
+  --sidebar-width-collapsed: 2.25rem;
+  --sidebar-submenu-width: 8rem;
+  --sidebar-item-height: 2.25rem;
+  --sidebar-footer-height: 2rem;
+
+  --sidebar-title-font-size: 0.75rem;
+  --sidebar-item-font-size: 0.875rem;
+  --sidebar-subitem-font-size: 0.8125rem;
+  --sidebar-icon-font-size: 1rem;
+
+  --sidebar-item-color: #737b85;
+  --sidebar-item-hover-color: #39414a;
+  --sidebar-item-hover-bg: #f1f3f5;
+  --sidebar-item-active-color: #57c27f;
+  --sidebar-item-active-bg: #ecf8f0;
+  --sidebar-title-color: #9ca3ac;
+  --sidebar-border-color: #e7eaee;
+
+  --sidebar-width-transition: 0.3s;
+  --sidebar-item-transition: 0.2s;
+  --sidebar-icon-font-family: "freedom";
+
+  /* Dashboard earnings surface tokens */
+  --dashboard-card-bg: #ffffff;
+  --dashboard-card-border: #e7eaee;
+  --dashboard-chart-line: #57c27f;
+  --dashboard-chart-fill: #eef7f1;
+  --dashboard-positive: #57c27f;
+  --dashboard-negative: #e07d7d;
+  --layout-gap-main: 1rem;
+}
+
+@theme inline {
+  --color-background: var(--ui-bg);
+  --color-foreground: var(--ui-text);
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+}
+
+.halo-sidebar-icon-glyph {
+  font-family: var(--sidebar-icon-font-family), sans-serif !important;
+  font-style: normal;
+  font-weight: 400;
+  font-variant: normal;
+  text-transform: none;
+  line-height: 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c7ccd3 transparent;
+}
+
+.halo-calendar .rbc-toolbar button {
+  border-radius: 0.7rem;
+  border: 1px solid var(--ui-border);
+  background: #fff;
+  color: var(--ui-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.halo-calendar .rbc-toolbar button:hover,
+.halo-calendar .rbc-toolbar button:focus-visible {
+  background: var(--ui-accent-soft);
+  border-color: color-mix(in oklab, var(--ui-accent) 35%, white);
+}
+
+.halo-calendar .rbc-toolbar button.rbc-active {
+  background: var(--ui-accent);
+  color: #fff;
+  border-color: var(--ui-accent);
+}
+
+.halo-calendar .rbc-toolbar .rbc-btn-group:first-child {
+  display: none;
+}
+
+.halo-calendar .rbc-toolbar-label {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ui-text);
+}
+
+.halo-calendar .rbc-header {
+  padding: 0.5rem 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ui-muted);
+  background: color-mix(in oklab, var(--ui-accent-soft) 40%, white);
+}
+
+.halo-calendar .rbc-today {
+  background: color-mix(in oklab, var(--ui-accent-soft) 35%, white);
+}
+
+.halo-calendar .rbc-event {
+  border: none;
+  border-radius: 0.55rem;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  box-shadow: 0 3px 8px -6px rgba(15, 28, 18, 0.7);
+}
+
+.halo-calendar .halo-event-confirmed {
+  background: #2d8d4a;
+}
+
+.halo-calendar .halo-event-pending {
+  background: #d97706;
+}
+
+.halo-calendar .halo-event-completed {
+  background: #475569;
+}
+
+.halo-calendar .halo-event-cancelled {
+  background: #dc2626;
+}
+
+.halo-reveal {
+  animation: haloFadeIn 0.32s ease-out;
+}
+
+.halo-page {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--ui-border);
+  background: color-mix(in oklab, white 92%, var(--ui-panel-solid));
+  padding: 1.5rem;
+  box-shadow: var(--shadow-panel);
+}
+
+.halo-panel {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-panel-solid);
+  padding: 1rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.halo-panel:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px -20px rgba(18, 35, 24, 0.55);
+}
+
+.halo-input,
+.halo-select,
+.halo-textarea {
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--ui-border);
+  background: #fff;
+  padding: 0.55rem 0.75rem;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.halo-input:focus,
+.halo-select:focus,
+.halo-textarea:focus {
+  border-color: color-mix(in oklab, var(--ui-accent) 65%, white);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ui-accent-soft) 60%, transparent);
+}
+
+.halo-textarea {
+  resize: vertical;
+  min-height: 86px;
+}
+
+.halo-btn-primary,
+.halo-btn-secondary,
+.halo-btn-danger {
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font-weight: 600;
+  transition: transform 0.15s ease, filter 0.2s ease, box-shadow 0.2s ease;
+}
+
+.halo-btn-primary:hover,
+.halo-btn-secondary:hover,
+.halo-btn-danger:hover {
+  transform: translateY(-1px);
+}
+
+.halo-btn-primary {
+  background: var(--ui-accent);
+  color: #fff;
+}
+
+.halo-btn-primary:disabled,
+.halo-btn-secondary:disabled,
+.halo-btn-danger:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+  transform: none;
+}
+
+.halo-btn-secondary {
+  border-color: var(--ui-border);
+  background: #fff;
+  color: var(--ui-text);
+}
+
+.halo-btn-danger {
+  border-color: #f2caca;
+  background: #fff4f4;
+  color: #ad3434;
+}
+
+.halo-alert {
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.halo-alert-success {
+  border-color: color-mix(in oklab, var(--status-success-bg) 60%, #9dd6a8);
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
+}
+
+.halo-alert-warning {
+  border-color: color-mix(in oklab, var(--status-warning-bg) 60%, #efbd72);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
+}
+
+.halo-alert-danger {
+  border-color: color-mix(in oklab, var(--status-danger-bg) 60%, #eba3a3);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+}
+
+.halo-table-wrap {
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--ui-border);
+  background: #fff;
+}
+
+.halo-table {
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.halo-table thead {
+  background: var(--ui-panel-solid);
+}
+
+.halo-table th {
+  padding: 0.7rem 0.9rem;
+  text-align: left;
+  font-weight: 600;
+}
+
+.halo-table td {
+  padding: 0.7rem 0.9rem;
+  border-top: 1px solid var(--ui-border);
+}
+
+.halo-table tbody tr:hover {
+  background: color-mix(in oklab, var(--ui-accent-soft) 55%, white);
+}
+
+.halo-skeleton {
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(
+      90deg,
+      rgba(212, 224, 209, 0.38) 0%,
+      rgba(236, 245, 232, 0.8) 50%,
+      rgba(212, 224, 209, 0.38) 100%
+    );
+  background-size: 260% 100%;
+  animation: haloShimmer 1.4s infinite linear;
+}
+
+@keyframes haloShimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes haloFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .halo-reveal,
+  .halo-skeleton {
+    animation: none !important;
+  }
+
+  .halo-panel,
+  .halo-btn-primary,
+  .halo-btn-secondary,
+  .halo-btn-danger {
+    transition: none !important;
+  }
+}

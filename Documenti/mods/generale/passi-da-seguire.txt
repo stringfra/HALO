@@ -1,0 +1,133 @@
+AI DEVELOPMENT GUIDE — Sistema Login & Ruoli (RBAC)
+
+Questo documento guida una IA nello sviluppo del sistema di autenticazione e permessi basato su ruoli per il gestionale dello studio dentistico. Tutti i passaggi sono sequenziali e indipendenti.
+
+FASE 0 — Setup iniziale
+Obiettivo
+
+Preparare l’ambiente per aggiungere utenti e permessi.
+
+Step:
+Installa dipendenze:
+Backend: jsonwebtoken, bcrypt
+Frontend: libreria gestione token (es. axios per chiamate con header Authorization)
+
+Crea cartelle:
+
+/backend/middlewares
+/backend/controllers
+/backend/routes
+/backend/models
+Configura variabili ambiente:
+JWT_SECRET
+JWT_EXPIRATION
+SALT_ROUNDS
+FASE 1 — Database utenti
+Obiettivo
+
+Creare tabella utenti e struttura per ruoli.
+
+Step:
+Creare tabella users con campi:
+id
+nome
+email (unique)
+password_hash
+ruolo (ENUM: ADMIN, DENTISTA, SEGRETARIO)
+created_at
+Seed utente ADMIN iniziale:
+nome: Admin
+email: admin@studio.com
+password: hashata
+ruolo: ADMIN
+FASE 2 — Autenticazione
+Obiettivo
+
+Permettere login sicuro e generazione token.
+
+Step:
+Creare /controllers/authController.js con funzione login:
+riceve email e password
+verifica utente
+confronta password con bcrypt
+genera JWT con payload {id, ruolo}
+Creare endpoint:
+POST /api/login → restituisce token
+Test endpoint con dati seed
+FASE 3 — Middleware autorizzazione
+Obiettivo
+
+Proteggere API e autorizzare in base al ruolo.
+
+Step:
+Creare /middlewares/authMiddleware.js con:
+verifyToken: legge JWT da header, valida, salva req.user
+authorize(roles): controlla se req.user.ruolo è autorizzato
+Applicare middleware agli endpoint:
+Admin-only: /stats/guadagni, gestione utenti
+Admin + Segretario: CRUD appuntamenti e fatture
+Tutti ruoli: visualizzazione agenda/pazienti (con limiti per dentista)
+FASE 4 — Protezione frontend
+Obiettivo
+
+Mostrare UI diversa in base al ruolo.
+
+Step:
+Implementare controllo lato frontend:
+redirect a login se non autenticato
+nascondere elementi non permessi
+Definire viste per ruolo:
+ADMIN → dashboard completa, gestione utenti, magazzino
+DENTISTA → agenda personale, scheda paziente, note cliniche
+SEGRETARIO → agenda completa, gestione appuntamenti e fatture
+FASE 5 — Gestione utenti
+Obiettivo
+
+Permettere all’ADMIN di creare e modificare utenti interni.
+
+Step:
+Creare CRUD utenti backend:
+POST /api/users → crea dentista o segretario
+GET /api/users → lista utenti
+PUT /api/users/:id → modifica utente
+DELETE /api/users/:id → elimina utente
+Applicare autorizzazioni:
+solo ADMIN può creare/modificare/eliminare utenti
+Creare frontend per gestione utenti:
+tabella utenti
+form creazione/modifica
+FASE 6 — Testing e validazioni
+Obiettivo
+
+Assicurarsi che ruoli e permessi funzionino correttamente.
+
+Step:
+Test API con JWT diversi per ogni ruolo.
+Verificare accesso negato quando ruolo non autorizzato.
+Test frontend: elementi nascosti secondo ruolo.
+Loggare tentativi di accesso non autorizzato.
+FASE 7 — Refactor e miglioramenti
+Obiettivo
+
+Rendere robusto e scalabile il sistema.
+
+Step:
+Validazione input (email, password)
+Gestione errori JWT scaduto o invalido
+Possibilità futura di multi-clinic (studio_id collegato a utenti)
+Preparazione per refresh token
+REGOLE IMPORTANTI
+Nessun ruolo deve bypassare API tramite frontend
+Admin = controllo completo
+Dentista = operatività clinica
+Segretario = gestione operativa
+Costruire step-by-step senza sovrapporre task
+Testare ogni fase prima di passare alla successiva
+OBIETTIVO FINALE
+
+Un sistema sicuro e scalabile che permetta:
+
+LOGIN e autenticazione sicura
+Differenziazione ruoli con permessi chiari
+Dashboard e funzioni filtrate per ruolo
+Gestione utenti interna allo studio (solo ADMIN)
