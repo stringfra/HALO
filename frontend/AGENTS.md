@@ -23,5 +23,4 @@ Style:
 - ispirato a Linear / Stripe
 
 Improve:
-- rendi UX migliore della repo originale
 - elimina complessità inutili
