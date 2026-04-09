@@ -138,7 +138,7 @@ export function SidebarMenuList({
   const compactMode = collapsed && depth === 0;
 
   return (
-    <ul className={nested ? "mt-1 flex flex-col gap-0.5 pl-7" : "flex flex-col gap-0.5"}>
+    <ul className={nested ? "mt-1 flex flex-col gap-1 pl-7" : "flex flex-col gap-1"}>
       {items.map((item) => {
         const isActive = isSidebarItemActive(pathname, item);
         const hasChildren = Boolean(item.children?.length);
@@ -153,12 +153,12 @@ export function SidebarMenuList({
           <li key={item.key} className={`list-none ${showFlyoutChildren ? "group relative" : ""}`}>
             <Link
               href={item.href}
-              className={`group flex items-center rounded-[0.4rem] text-left transition-colors ${
+              className={`group flex items-center rounded-[0.55rem] text-left transition-colors ${
                 compactMode
                   ? "h-8 w-8 justify-center"
                   : nested
                     ? "h-7 px-2 text-[12px]"
-                    : "h-8 px-2.5 text-[13px]"
+                    : "h-9 px-2.5 text-[13px]"
               } ${
                 isRootActive
                   ? "bg-[var(--sidebar-item-active-bg)] text-[var(--sidebar-item-active-color)]"
@@ -180,7 +180,7 @@ export function SidebarMenuList({
                   ) : null}
                   <span className="min-w-0 flex-1 truncate">{item.label}</span>
                   {typeof item.badge !== "undefined" && !hasChildren ? (
-                    <span className="ml-2 rounded-[0.3rem] border border-[var(--sidebar-border-color)] bg-[var(--ui-panel-solid)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--ui-muted)]">
+                    <span className="ml-2 rounded-[0.4rem] border border-[var(--sidebar-border-color)] bg-[var(--ui-panel-solid)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--ui-muted)]">
                       {item.badge}
                     </span>
                   ) : null}
@@ -204,7 +204,7 @@ export function SidebarMenuList({
             ) : null}
 
             {showFlyoutChildren ? (
-              <div className="pointer-events-none invisible absolute top-0 left-full z-50 ml-2 w-[var(--sidebar-submenu-width)] rounded-[0.45rem] border border-[var(--sidebar-border-color)] bg-[var(--ui-panel-solid)] p-1.5 opacity-0 shadow-md transition-all duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:opacity-100">
+              <div className="pointer-events-none invisible absolute top-0 left-full z-50 ml-2 w-[var(--sidebar-submenu-width)] rounded-[0.6rem] border border-[var(--sidebar-border-color)] bg-[var(--ui-panel-solid)] p-1.5 opacity-0 shadow-[var(--shadow-soft)] transition-all duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:opacity-100">
                 <SidebarMenuList
                   items={item.children || []}
                   pathname={pathname}

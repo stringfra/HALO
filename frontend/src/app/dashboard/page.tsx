@@ -869,7 +869,7 @@ export default function DashboardPage() {
 
   return (
     <section className="halo-reveal">
-      <div className="rounded-[0.6rem] border border-[var(--ui-border)] bg-[var(--ui-panel-solid)]">
+      <div className="bg-[var(--ui-panel-solid)]">
         <div className="flex items-center justify-between border-b border-[var(--ui-border)] px-4 py-3">
           <h1 className="text-[14px] font-semibold text-[var(--ui-text)]">Home</h1>
           <div className="flex items-center gap-2 text-[var(--ui-muted)]">
@@ -884,6 +884,23 @@ export default function DashboardPage() {
                 <path d="M10 5.2v9.6M5.2 10h9.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
               </svg>
             </button>
+          </div>
+        </div>
+
+        <div className="border-b border-[var(--ui-border)] px-4 py-2">
+          <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+            <span className="rounded-[0.45rem] border border-[var(--ui-border)] bg-[var(--ui-accent-soft)] px-2.5 py-1 font-medium text-[var(--ui-text)]">
+              Dashboard
+            </span>
+            <span className="rounded-[0.45rem] border border-[var(--ui-border)] bg-white px-2.5 py-1 font-medium text-[var(--ui-muted)]">
+              Appuntamenti
+            </span>
+            <span className="rounded-[0.45rem] border border-[var(--ui-border)] bg-white px-2.5 py-1 font-medium text-[var(--ui-muted)]">
+              Pazienti
+            </span>
+            <span className="rounded-[0.45rem] border border-[var(--ui-border)] bg-white px-2.5 py-1 font-medium text-[var(--ui-muted)]">
+              Fatture
+            </span>
           </div>
         </div>
 

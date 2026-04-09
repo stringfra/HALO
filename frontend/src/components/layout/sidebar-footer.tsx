@@ -12,10 +12,10 @@ function FooterItem({
   icon: "feedback" | "help";
 }) {
   return (
-    <button
-      type="button"
-      className="group flex w-full items-center justify-between rounded-[0.4rem] px-2 py-1.5 text-left text-[12px] text-[var(--sidebar-item-color)] transition-colors hover:bg-[var(--sidebar-item-hover-bg)] hover:text-[var(--sidebar-item-hover-color)]"
-    >
+      <button
+        type="button"
+        className="group flex w-full items-center justify-between rounded-[0.55rem] px-2 py-1.5 text-left text-[12px] text-[var(--sidebar-item-color)] transition-colors hover:bg-[var(--sidebar-item-hover-bg)] hover:text-[var(--sidebar-item-hover-color)]"
+      >
       <span className="flex items-center gap-1.5">
         <span className="inline-flex h-3.5 w-3.5 items-center justify-center">
           {icon === "feedback" ? (
@@ -39,14 +39,14 @@ function FooterItem({
 export function SidebarFooter({ userLabel }: SidebarFooterProps) {
   return (
     <footer className="mt-auto hidden border-t border-[var(--sidebar-border-color)] pt-2 lg:block">
-      <div className="space-y-0.5">
+      <div className="space-y-1">
         <FooterItem label="Feedback" icon="feedback" />
         <FooterItem label="Help & Support" icon="help" />
       </div>
 
       <button
         type="button"
-        className="mt-2 flex w-full items-center justify-between rounded-[0.45rem] px-2 py-1.5 text-left transition-colors hover:bg-[var(--sidebar-item-hover-bg)]"
+        className="mt-2 flex w-full items-center justify-between rounded-[0.55rem] px-2 py-1.5 text-left transition-colors hover:bg-[var(--sidebar-item-hover-bg)]"
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#d7dade] text-[10px] font-semibold text-[#5d6570]">

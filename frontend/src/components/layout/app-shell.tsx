@@ -156,7 +156,7 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="min-h-screen bg-[var(--ui-bg)]">
-      <div className="flex min-h-screen w-full flex-col overflow-hidden border border-[var(--ui-border)] bg-[var(--ui-panel-solid)] lg:flex-row">
+      <div className="mx-auto flex min-h-screen w-full max-w-[1600px] flex-col lg:flex-row">
         <AppSidebar
           pathname={pathname}
           items={visibleSidebarItems}
@@ -164,7 +164,9 @@ export function AppShell({ children }: AppShellProps) {
           userLabel={bootstrap?.current_user?.role_alias || `Utente #${session.userId}`}
         />
 
-        <main className="min-h-0 flex-1 overflow-auto p-3">{children}</main>
+        <main className="min-h-0 flex-1 overflow-auto border-t border-[var(--ui-border)] bg-[var(--ui-panel-solid)] lg:border-t-0 lg:border-l">
+          <div className="p-3 sm:p-4 lg:p-5">{children}</div>
+        </main>
       </div>
     </div>
   );
