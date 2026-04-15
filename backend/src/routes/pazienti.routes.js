@@ -104,6 +104,7 @@ router.get("/", requirePermission("clients.read"), async (req, res) => {
                         p.telefono,
                         p.email,
                         p.note,
+                        (to_jsonb(p)->>'created_at')::timestamptz AS created_at,
                         p.medico_id,
                         u.nome AS medico_nome
                  FROM pazienti p
@@ -208,7 +209,14 @@ router.post("/", requirePermission("clients.write"), async (req, res) => {
     const result = await pool.query(
       `INSERT INTO pazienti (studio_id, medico_id, nome, cognome, telefono, email, note)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, nome, cognome, telefono, email, note, medico_id`,
+       RETURNING id,
+                 nome,
+                 cognome,
+                 telefono,
+                 email,
+                 note,
+                 (to_jsonb(pazienti)->>'created_at')::timestamptz AS created_at,
+                 medico_id`,
       [studioId, medicoId, nome, cognome, telefono, email, note],
     );
     return res.status(201).json(serializeClient({
@@ -338,7 +346,14 @@ router.put("/:id", requirePermission("clients.write"), async (req, res) => {
        SET ${fields.join(", ")}
        WHERE id = $${index}
          AND studio_id = $${index + 1}
-       RETURNING id, nome, cognome, telefono, email, note, medico_id`,
+       RETURNING id,
+                 nome,
+                 cognome,
+                 telefono,
+                 email,
+                 note,
+                 (to_jsonb(pazienti)->>'created_at')::timestamptz AS created_at,
+                 medico_id`,
       values,
     );
 

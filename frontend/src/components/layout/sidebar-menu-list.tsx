@@ -9,6 +9,7 @@ type SidebarMenuListProps = {
   nested?: boolean;
   collapsed?: boolean;
   depth?: number;
+  onNavigate?: () => void;
 };
 
 type IconName =
@@ -120,7 +121,7 @@ function Chevron({ expanded }: { expanded: boolean }) {
     <svg
       viewBox="0 0 20 20"
       fill="none"
-      className={`h-3.5 w-3.5 shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`}
+      className={`h-3.5 w-3.5 shrink-0 text-[var(--ui-muted)] transition-transform ${expanded ? "rotate-180" : ""}`}
       aria-hidden="true"
     >
       <path d="M5.8 8l4.2 4.2L14.2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
@@ -134,61 +135,62 @@ export function SidebarMenuList({
   nested = false,
   collapsed = false,
   depth = 0,
+  onNavigate,
 }: SidebarMenuListProps) {
   const compactMode = collapsed && depth === 0;
 
   return (
-    <ul className={nested ? "mt-1 flex flex-col gap-1 pl-7" : "flex flex-col gap-1"}>
+    <ul className={nested ? "mt-1 space-y-1 pl-6" : "space-y-1"}>
       {items.map((item) => {
-        const isActive = isSidebarItemActive(pathname, item);
         const hasChildren = Boolean(item.children?.length);
+        const isActive = isSidebarItemActive(pathname, item);
         const isExpanded = Boolean(item.expanded || isActive);
         const showInlineChildren = hasChildren && isExpanded && !compactMode;
         const showFlyoutChildren = hasChildren && compactMode;
         const iconName = resolveIconName(item);
-        const isTopLevel = depth === 0;
-        const isRootActive = isTopLevel && isActive;
 
         return (
           <li key={item.key} className={`list-none ${showFlyoutChildren ? "group relative" : ""}`}>
             <Link
               href={item.href}
-              className={`group flex items-center rounded-[0.55rem] text-left transition-colors ${
+              title={compactMode ? item.label : undefined}
+              onClick={onNavigate}
+              className={`group flex items-center rounded-[0.72rem] transition-colors ${
                 compactMode
-                  ? "h-8 w-8 justify-center"
+                  ? "h-10 w-10 justify-center"
                   : nested
-                    ? "h-7 px-2 text-[12px]"
-                    : "h-9 px-2.5 text-[13px]"
+                    ? "h-8 px-2 text-[12px]"
+                    : "h-10 px-2.5 text-[13px]"
               } ${
-                isRootActive
-                  ? "bg-[var(--sidebar-item-active-bg)] text-[var(--sidebar-item-active-color)]"
+                isActive
+                  ? "bg-[linear-gradient(160deg,#111827,#1f2937)] text-white shadow-[0_10px_18px_-14px_rgba(17,24,39,1)]"
                   : "text-[var(--sidebar-item-color)] hover:bg-[var(--sidebar-item-hover-bg)] hover:text-[var(--sidebar-item-hover-color)]"
               }`}
               aria-current={isActive ? "page" : undefined}
               aria-haspopup={hasChildren ? "menu" : undefined}
               aria-expanded={hasChildren && !compactMode ? isExpanded : undefined}
-              title={compactMode ? item.label : undefined}
             >
               {compactMode ? (
                 <SidebarIcon name={iconName} />
               ) : (
                 <>
-                  {isTopLevel ? (
-                    <span className="mr-2 inline-flex h-4 w-4 items-center justify-center">
+                  {!nested ? (
+                    <span className={`mr-2 inline-flex h-4 w-4 items-center justify-center ${isActive ? "text-white" : ""}`}>
                       <SidebarIcon name={iconName} />
                     </span>
                   ) : null}
+
                   <span className="min-w-0 flex-1 truncate">{item.label}</span>
+
                   {typeof item.badge !== "undefined" && !hasChildren ? (
-                    <span className="ml-2 rounded-[0.4rem] border border-[var(--sidebar-border-color)] bg-[var(--ui-panel-solid)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--ui-muted)]">
+                    <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                      isActive ? "bg-white/18 text-white" : "border border-[var(--ui-border)] bg-[var(--ui-panel-solid)] text-[var(--ui-muted)]"
+                    }`}>
                       {item.badge}
                     </span>
                   ) : null}
-                  {hasChildren ? (
-                    <span className="ml-1 text-[var(--ui-muted)]">
-                      <Chevron expanded={isExpanded} />
-                    </span>
-                  ) : null}
+
+                  {hasChildren ? <Chevron expanded={isExpanded} /> : null}
                 </>
               )}
             </Link>
@@ -200,17 +202,19 @@ export function SidebarMenuList({
                 nested
                 collapsed={false}
                 depth={depth + 1}
+                onNavigate={onNavigate}
               />
             ) : null}
 
             {showFlyoutChildren ? (
-              <div className="pointer-events-none invisible absolute top-0 left-full z-50 ml-2 w-[var(--sidebar-submenu-width)] rounded-[0.6rem] border border-[var(--sidebar-border-color)] bg-[var(--ui-panel-solid)] p-1.5 opacity-0 shadow-[var(--shadow-soft)] transition-all duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:opacity-100">
+              <div className="pointer-events-none invisible absolute top-0 left-full z-50 ml-2 w-[12rem] rounded-[0.8rem] border border-[var(--ui-border)] bg-[var(--ui-panel-solid)] p-2 opacity-0 shadow-[var(--shadow-panel)] transition-all duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:opacity-100">
                 <SidebarMenuList
                   items={item.children || []}
                   pathname={pathname}
                   nested
                   collapsed={false}
                   depth={depth + 1}
+                  onNavigate={onNavigate}
                 />
               </div>
             ) : null}

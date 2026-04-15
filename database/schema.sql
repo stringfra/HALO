@@ -345,6 +345,7 @@ BEGIN
   ALTER TABLE platform_refresh_tokens ADD COLUMN IF NOT EXISTS user_agent VARCHAR(255);
   ALTER TABLE pazienti ADD COLUMN IF NOT EXISTS studio_id BIGINT;
   ALTER TABLE pazienti ADD COLUMN IF NOT EXISTS medico_id BIGINT;
+  ALTER TABLE pazienti ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
   ALTER TABLE appuntamenti ADD COLUMN IF NOT EXISTS studio_id BIGINT;
   ALTER TABLE appuntamenti ADD COLUMN IF NOT EXISTS durata_minuti SMALLINT;
   ALTER TABLE appuntamenti ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
@@ -643,6 +644,10 @@ BEGIN
   SET created_at = NOW()
   WHERE created_at IS NULL;
 
+  UPDATE pazienti
+  SET created_at = NOW()
+  WHERE created_at IS NULL;
+
   ALTER TABLE studi ALTER COLUMN vertical_key SET DEFAULT 'dental';
   ALTER TABLE studi ALTER COLUMN default_locale SET DEFAULT 'it-IT';
   ALTER TABLE studi ALTER COLUMN default_timezone SET DEFAULT 'Europe/Rome';
@@ -745,6 +750,8 @@ BEGIN
   ALTER TABLE appointment_sync_outbox ALTER COLUMN attempts SET NOT NULL;
   ALTER TABLE appointment_sync_outbox ALTER COLUMN created_at SET DEFAULT NOW();
   ALTER TABLE appointment_sync_outbox ALTER COLUMN created_at SET NOT NULL;
+  ALTER TABLE pazienti ALTER COLUMN created_at SET DEFAULT NOW();
+  ALTER TABLE pazienti ALTER COLUMN created_at SET NOT NULL;
 
   UPDATE users
   SET studio_id = default_studio_id

@@ -11,112 +11,169 @@ type AppSidebarProps = {
   items: AppSidebarItem[];
   brandProductName: string;
   userLabel: string;
+  collapsed: boolean;
+  mobileOpen: boolean;
+  onToggleCollapsed: () => void;
+  onCloseMobile: () => void;
 };
 
-function buildStructuredSidebar(items: AppSidebarItem[]): AppSidebarItem[] {
-  const byKey = new Map(items.map((item) => [item.key, item]));
-  const consumed = new Set<string>();
+function buildStructuredSidebar(items: AppSidebarItem[]) {
+  const operativoKeys = new Set(["dashboard", "agenda", "clients", "pazienti"]);
+  const amministrazioneKeys = new Set(["billing", "inventory", "settings", "fatture", "magazzino", "impostazioni"]);
 
-  const dashboard = byKey.get("dashboard");
-  const agenda = byKey.get("agenda");
-  const clients = byKey.get("clients");
-  const settings = byKey.get("settings");
-  const billing = byKey.get("billing");
-  const inventory = byKey.get("inventory");
+  const operativo: AppSidebarItem[] = [];
+  const amministrazione: AppSidebarItem[] = [];
+  const extra: AppSidebarItem[] = [];
 
-  const rootItems: AppSidebarItem[] = [];
-
-  if (dashboard) {
-    consumed.add(dashboard.key);
-    rootItems.push(dashboard);
+  for (const item of items) {
+    const key = String(item.key || "").toLowerCase();
+    if (operativoKeys.has(key)) {
+      operativo.push(item);
+      continue;
+    }
+    if (amministrazioneKeys.has(key)) {
+      amministrazione.push(item);
+      continue;
+    }
+    extra.push(item);
   }
 
-  if (agenda) {
-    consumed.add(agenda.key);
-    rootItems.push({ ...agenda, badge: 4 });
-  }
-
-  if (clients) {
-    consumed.add(clients.key);
-    rootItems.push(clients);
-  }
-
-  if (settings) {
-    consumed.add(settings.key);
-  }
-
-  if (billing) {
-    consumed.add(billing.key);
-    rootItems.push(billing);
-  }
-
-  if (inventory) {
-    consumed.add(inventory.key);
-    rootItems.push(inventory);
-  }
-
-  const remaining = items.filter((item) => !consumed.has(item.key));
-  return [...rootItems, ...remaining];
+  return { operativo, amministrazione, extra };
 }
 
 function BrandMark() {
   return (
-    <span className="inline-flex h-5 w-5 items-center justify-center rounded-[0.45rem] bg-[#0f172a] text-[10px] font-semibold text-white">
+    <span className="inline-flex h-8 w-8 items-center justify-center rounded-[0.75rem] bg-[linear-gradient(160deg,#111827,#1f2937)] text-xs font-semibold text-white shadow-[0_8px_18px_-10px_rgba(17,24,39,0.9)]">
       H
     </span>
   );
 }
 
-export function AppSidebar({ pathname, items, brandProductName, userLabel }: AppSidebarProps) {
-  const structuredItems = useMemo(() => buildStructuredSidebar(items), [items]);
-  const bottomSettingsItem = useMemo(() => {
-    const settings = items.find((item) => item.key === "settings");
-    if (!settings) {
-      return null;
-    }
-
-    return {
-      ...settings,
-      badge: undefined,
-      expanded: false,
-      children: undefined,
-    } satisfies AppSidebarItem;
-  }, [items]);
+function SectionLabel({ label, collapsed }: { label: string; collapsed: boolean }) {
+  if (collapsed) {
+    return null;
+  }
 
   return (
-    <aside
-      className="flex w-full flex-col border-b border-[var(--sidebar-border-color)] bg-white px-3 py-3 lg:w-[14.5rem] lg:border-r lg:border-b-0"
-      style={{ fontFamily: "var(--sidebar-font-family)" }}
-    >
-      <Link href="/dashboard" className="mb-3 inline-flex items-center gap-2 px-1.5 py-1 text-[13px] font-semibold text-[var(--ui-text)]">
-        <BrandMark />
-        <span>{brandProductName}</span>
-      </Link>
+    <p className="mb-1 px-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ui-muted)]">
+      {label}
+    </p>
+  );
+}
 
-      <div className="mb-3">
-        <label className="group flex h-8 items-center gap-1.5 rounded-[0.55rem] border border-[var(--sidebar-border-color)] bg-[#f8fafc] px-2 text-[12px] text-[var(--ui-muted)]">
-          <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
-            <circle cx="8.6" cy="8.6" r="4.6" stroke="currentColor" strokeWidth="1.5" />
-            <path d="M12.3 12.2L16 15.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-          <span className="flex-1">Search...</span>
-          <span className="rounded-[0.3rem] border border-[var(--sidebar-border-color)] px-1 py-0.5 text-[10px] leading-none">
-            ⌘ K
-          </span>
-        </label>
-      </div>
+export function AppSidebar({
+  pathname,
+  items,
+  brandProductName,
+  userLabel,
+  collapsed,
+  mobileOpen,
+  onToggleCollapsed,
+  onCloseMobile,
+}: AppSidebarProps) {
+  const structuredItems = useMemo(() => buildStructuredSidebar(items), [items]);
+  const hasTopItems = structuredItems.operativo.length > 0;
+  const hasAdminItems = structuredItems.amministrazione.length > 0;
+  const hasExtraItems = structuredItems.extra.length > 0;
 
-      <nav className="flex-1" aria-label="Navigazione">
-        <SidebarMenuList items={structuredItems} pathname={pathname} />
-      </nav>
-
-      {bottomSettingsItem ? (
-        <nav className="mb-2 border-t border-[var(--sidebar-border-color)] pt-2" aria-label="Impostazioni">
-          <SidebarMenuList items={[bottomSettingsItem]} pathname={pathname} />
-        </nav>
+  return (
+    <>
+      {mobileOpen ? (
+        <button
+          type="button"
+          aria-label="Chiudi menu"
+          className="fixed inset-0 z-30 bg-slate-950/45 backdrop-blur-[2px] lg:hidden"
+          onClick={onCloseMobile}
+        />
       ) : null}
 
-      <SidebarFooter userLabel={userLabel} />
-    </aside>
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex border-r border-[var(--sidebar-border-color)] bg-[var(--sidebar-bg)] transition-[width,transform] duration-300 lg:translate-x-0 ${
+          collapsed ? "w-[5.25rem] lg:w-[5.25rem]" : "w-[16.75rem] lg:w-[16.75rem]"
+        } ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+        style={{ fontFamily: "var(--font-ui)" }}
+      >
+        <div className="flex w-full flex-col p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <Link href="/dashboard" className={`inline-flex min-w-0 items-center gap-2 ${collapsed ? "px-1" : "px-1.5 py-1"}`}>
+              <BrandMark />
+              {!collapsed ? (
+                <span className="truncate text-[13px] font-semibold tracking-[0.01em] text-[var(--ui-text)]">
+                  {brandProductName}
+                </span>
+              ) : null}
+            </Link>
+
+            <button
+              type="button"
+              className="hidden h-8 w-8 items-center justify-center rounded-[0.65rem] border border-[var(--ui-border)] bg-[var(--ui-panel-solid)] text-[var(--ui-muted)] transition-colors hover:text-[var(--ui-text)] lg:inline-flex"
+              onClick={onToggleCollapsed}
+              aria-label={collapsed ? "Espandi sidebar" : "Comprimi sidebar"}
+            >
+              <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
+                {collapsed ? (
+                  <path d="M8.3 5.9L12.4 10l-4.1 4.1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                ) : (
+                  <path d="M11.7 5.9L7.6 10l4.1 4.1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                )}
+              </svg>
+            </button>
+          </div>
+
+          {!collapsed ? (
+            <div className="mb-3">
+              <label className="flex items-center gap-2 rounded-[0.75rem] border border-[var(--ui-border)] bg-[var(--ui-panel-solid)] px-2.5 py-2 text-[12px] text-[var(--ui-muted)]">
+                <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
+                  <circle cx="8.6" cy="8.6" r="4.6" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M12.3 12.2L16 15.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                <span className="truncate">Search...</span>
+                <span className="ml-auto rounded-[0.35rem] border border-[var(--ui-border)] px-1 py-0.5 text-[10px] leading-none">⌘K</span>
+              </label>
+            </div>
+          ) : null}
+
+          <nav className="min-h-0 flex-1 overflow-y-auto pr-1" aria-label="Navigazione principale">
+            {hasTopItems ? (
+              <section className="mb-3">
+                <SectionLabel label="Operativo" collapsed={collapsed} />
+                <SidebarMenuList
+                  items={structuredItems.operativo}
+                  pathname={pathname}
+                  collapsed={collapsed}
+                  onNavigate={onCloseMobile}
+                />
+              </section>
+            ) : null}
+
+            {hasAdminItems ? (
+              <section className="mb-3">
+                <SectionLabel label="Amministrazione" collapsed={collapsed} />
+                <SidebarMenuList
+                  items={structuredItems.amministrazione}
+                  pathname={pathname}
+                  collapsed={collapsed}
+                  onNavigate={onCloseMobile}
+                />
+              </section>
+            ) : null}
+
+            {hasExtraItems ? (
+              <section>
+                <SectionLabel label="Altro" collapsed={collapsed} />
+                <SidebarMenuList
+                  items={structuredItems.extra}
+                  pathname={pathname}
+                  collapsed={collapsed}
+                  onNavigate={onCloseMobile}
+                />
+              </section>
+            ) : null}
+          </nav>
+
+          <SidebarFooter userLabel={userLabel} collapsed={collapsed} />
+        </div>
+      </aside>
+    </>
   );
 }

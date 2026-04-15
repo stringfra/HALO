@@ -13,31 +13,34 @@
 }
 
 :root {
-  --font-ui: "Inter", "Avenir Next", "Segoe UI", Helvetica, sans-serif;
+  --font-ui: "Manrope", "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+  --font-geist-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
 
-  --ui-bg: #f8fafc;
-  --ui-bg-glow: #f1f5f9;
-  --ui-text: #0f172a;
-  --ui-muted: #64748b;
-  --ui-border: #e2e8f0;
-  --ui-panel: rgba(255, 255, 255, 0.95);
+  --ui-bg: #edf3f7;
+  --ui-bg-glow: #d7e2eb;
+  --ui-text: #132235;
+  --ui-muted: #5a6b7f;
+  --ui-border: #d4dfeb;
+  --ui-panel: rgba(255, 255, 255, 0.93);
   --ui-panel-solid: #ffffff;
-  --ui-accent: #0f172a;
-  --ui-accent-soft: #e2e8f0;
+  --ui-accent: #0f3d5e;
+  --ui-accent-soft: #dbe9f4;
+  --ui-accent-contrast: #ffffff;
   --radius-md: 0.625rem;
   --radius-lg: 0.875rem;
-  --radius-xl: 1rem;
+  --radius-xl: 1.05rem;
   --radius-xxl: 1.25rem;
-  --shadow-soft: 0 8px 20px -18px rgba(15, 23, 42, 0.35);
-  --shadow-panel: 0 14px 26px -24px rgba(15, 23, 42, 0.45);
-  --status-success-bg: #eefbf3;
+  --shadow-soft: 0 15px 30px -22px rgba(12, 42, 68, 0.45);
+  --shadow-panel: 0 24px 40px -32px rgba(13, 44, 72, 0.55);
+  --status-success-bg: #ebf8f0;
   --status-success-text: #166534;
-  --status-warning-bg: #fff8eb;
-  --status-warning-text: #b45309;
-  --status-danger-bg: #fef2f2;
-  --status-danger-text: #b91c1c;
-  --status-info-bg: #eff6ff;
-  --status-info-text: #1d4ed8;
+  --status-warning-bg: #fff6e8;
+  --status-warning-text: #a85a0f;
+  --status-danger-bg: #fff0f0;
+  --status-danger-text: #a61d24;
+  --status-info-bg: #ecf4ff;
+  --status-info-text: #1f5494;
+  --sidebar-bg: color-mix(in oklab, white 92%, #d9e8f5);
 
   /* Sidebar tokens from screenshot target */
   --sidebar-font-family: var(--font-ui);
@@ -53,13 +56,13 @@
   --sidebar-subitem-font-size: 0.8125rem;
   --sidebar-icon-font-size: 1rem;
 
-  --sidebar-item-color: #475569;
-  --sidebar-item-hover-color: #0f172a;
-  --sidebar-item-hover-bg: #f1f5f9;
-  --sidebar-item-active-color: #0f172a;
-  --sidebar-item-active-bg: #e2e8f0;
-  --sidebar-title-color: #94a3b8;
-  --sidebar-border-color: #e2e8f0;
+  --sidebar-item-color: #43566f;
+  --sidebar-item-hover-color: #10253b;
+  --sidebar-item-hover-bg: #e8f0f8;
+  --sidebar-item-active-color: #ffffff;
+  --sidebar-item-active-bg: #123a5b;
+  --sidebar-title-color: #7d90a8;
+  --sidebar-border-color: #d0deec;
 
   --sidebar-width-transition: 0.3s;
   --sidebar-item-transition: 0.2s;
@@ -84,7 +87,8 @@
 
 body {
   background:
-    radial-gradient(circle at 0 0, color-mix(in oklab, var(--ui-bg-glow) 70%, white) 0, transparent 42%),
+    radial-gradient(circle at 0 0, color-mix(in oklab, var(--ui-bg-glow) 68%, white) 0, transparent 42%),
+    radial-gradient(circle at 100% 100%, color-mix(in oklab, #c2d7ea 40%, transparent) 0, transparent 38%),
     var(--ui-bg);
   color: var(--ui-text);
   font-family: var(--font-ui);
@@ -182,15 +186,19 @@ body {
 .halo-page {
   border-radius: var(--radius-lg);
   border: 1px solid var(--ui-border);
-  background: color-mix(in oklab, white 97%, var(--ui-panel-solid));
+  background: color-mix(in oklab, white 95%, #edf5fc);
   padding: 1.5rem;
   box-shadow: var(--shadow-soft);
+}
+
+.halo-dashboard {
+  font-family: var(--font-ui);
 }
 
 .halo-panel {
   border-radius: var(--radius-md);
   border: 1px solid var(--ui-border);
-  background: var(--ui-panel-solid);
+  background: color-mix(in oklab, white 97%, #ebf2fa);
   padding: 1rem;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
@@ -242,8 +250,8 @@ body {
 .halo-btn-primary {
   background: var(--ui-accent);
   border-color: var(--ui-accent);
-  color: #fff;
-  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.4);
+  color: var(--ui-accent-contrast);
+  box-shadow: 0 8px 20px -14px color-mix(in oklab, var(--ui-accent) 70%, transparent);
 }
 
 .halo-btn-primary:disabled,

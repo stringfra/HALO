@@ -12,7 +12,7 @@ import {
   type BackendAppointment,
 } from "@/features/agenda/api";
 import { listFatture, type FatturaListItem } from "@/features/fatture/api";
-import { listPazienti } from "@/features/pazienti/api";
+import { listPazienti, type Paziente } from "@/features/pazienti/api";
 import { getSessionSnapshot, subscribeToSession } from "@/features/auth/session";
 import { formatDateToIso, parseProjectDate } from "@/lib/date-utils";
 
@@ -20,7 +20,7 @@ type DashboardSnapshot = {
   stats: StatsGuadagni | null;
   invoices: FatturaListItem[];
   appointments: BackendAppointment[];
-  patientsCount: number;
+  patients: Paziente[];
 };
 
 type RevenuePoint = {
@@ -60,6 +60,8 @@ type ComparableStampParts = {
 
 const rangePresetValues: RangePreset[] = ["7d", "14d", "30d", "90d", "ytd", "custom"];
 const granularityModeValues: GranularityMode[] = ["auto", "day", "week", "month"];
+const EMPTY_INVOICES: FatturaListItem[] = [];
+const EMPTY_PATIENTS: Paziente[] = [];
 
 type SearchParamReader = {
   get(name: string): string | null;
@@ -176,19 +178,6 @@ function resolveRange(
   };
 }
 
-function pseudoTimeFromInvoice(invoiceId: number, index: number) {
-  const hour = String((invoiceId + index * 3) % 24).padStart(2, "0");
-  const minute = String((invoiceId * 7 + index * 11) % 60).padStart(2, "0");
-  return `${hour}:${minute}`;
-}
-
-function buildEmailFromInvoice(invoice: FatturaListItem) {
-  const first = (invoice.nome || "utente").trim().toLowerCase();
-  const last = (invoice.cognome || "cliente").trim().toLowerCase();
-  const sanitized = `${first}.${last}`.replace(/[^a-z0-9.]/g, "");
-  return `${sanitized}@example.com`;
-}
-
 function parseTimeParts(value: string | null | undefined): TimeParts | null {
   const normalized = String(value || "").trim();
   const match = normalized.match(/^(\d{2}):(\d{2})(?::\d{2})?$/);
@@ -296,6 +285,61 @@ function countUpcomingAppointments(
   }).length;
 }
 
+function parsePatientCreatedDate(patient: Paziente) {
+  const rawValue = String(patient.created_at ?? patient.createdAt ?? "").trim();
+  if (!rawValue) {
+    return null;
+  }
+
+  const parsedDateTime = new Date(rawValue);
+  if (!Number.isNaN(parsedDateTime.getTime())) {
+    return new Date(
+      parsedDateTime.getFullYear(),
+      parsedDateTime.getMonth(),
+      parsedDateTime.getDate(),
+    );
+  }
+
+  const parsedDate = parseProjectDate(rawValue);
+  if (!parsedDate) {
+    return null;
+  }
+
+  return new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
+}
+
+function countNewPatientsInRange(
+  patients: Paziente[],
+  fromDate: Date,
+  toDate: Date,
+) {
+  const fromDay = new Date(
+    fromDate.getFullYear(),
+    fromDate.getMonth(),
+    fromDate.getDate(),
+  ).getTime();
+  const toDay = new Date(
+    toDate.getFullYear(),
+    toDate.getMonth(),
+    toDate.getDate(),
+  ).getTime();
+
+  return patients.filter((patient) => {
+    const createdDate = parsePatientCreatedDate(patient);
+    if (!createdDate) {
+      return false;
+    }
+
+    const createdDay = new Date(
+      createdDate.getFullYear(),
+      createdDate.getMonth(),
+      createdDate.getDate(),
+    ).getTime();
+
+    return createdDay >= fromDay && createdDay <= toDay;
+  }).length;
+}
+
 function buildRevenueSeries(snapshot: DashboardSnapshot | null): RevenuePoint[] {
   const raw = snapshot?.stats?.ultimi30Giorni ?? [];
   if (raw.length > 0) {
@@ -396,16 +440,6 @@ function formatTrend(current: number, previous: number | null): Trend {
     label: `${delta > 0 ? "+" : ""}${delta.toFixed(0)}%`,
     tone: delta > 0 ? "positive" : "negative",
   };
-}
-
-function trendClass(tone: Trend["tone"]) {
-  if (tone === "positive") {
-    return "bg-[var(--status-success-bg)] text-[var(--status-success-text)]";
-  }
-  if (tone === "negative") {
-    return "bg-[var(--status-danger-bg)] text-[var(--status-danger-text)]";
-  }
-  return "bg-[var(--status-info-bg)] text-[var(--status-info-text)]";
 }
 
 type ChartPathData = {
@@ -729,7 +763,7 @@ export default function DashboardPage() {
           stats,
           invoices,
           appointments,
-          patientsCount: patients.length,
+          patients,
         });
       } catch (loadError) {
         if (cancelled) {
@@ -771,15 +805,18 @@ export default function DashboardPage() {
 
   const chart = useMemo(() => buildChartPath(revenueSeries), [revenueSeries]);
 
-  const paidInvoices = useMemo(
-    () => snapshot?.invoices.filter((invoice) => invoice.stato === "pagata") ?? [],
-    [snapshot?.invoices],
-  );
-  const allInvoices = snapshot?.invoices ?? [];
+  const allInvoices = snapshot?.invoices ?? EMPTY_INVOICES;
+  const patients = snapshot?.patients ?? EMPTY_PATIENTS;
   const orders = snapshot?.invoices.length ?? 0;
   const totalAppointments = snapshot?.appointments.length ?? 0;
-  const conversions = paidInvoices.length;
-  const customers = snapshot?.patientsCount ?? 0;
+  const unpaidInvoicesCount = useMemo(
+    () => allInvoices.filter((invoice) => invoice.stato === "da_pagare").length,
+    [allInvoices],
+  );
+  const newPatientsCount = useMemo(
+    () => countNewPatientsInRange(patients, requestedRange.fromDate, requestedRange.toDate),
+    [patients, requestedRange.fromDate, requestedRange.toDate],
+  );
   const upcomingAppointmentsCount = useMemo(
     () => countUpcomingAppointments(snapshot?.appointments ?? [], new Date(timeTick)),
     [snapshot?.appointments, timeTick],
@@ -802,34 +839,53 @@ export default function DashboardPage() {
       ? Math.max(totalAppointments - upcomingAppointmentsCount, 1)
       : null,
   );
-  const conversionTrend = formatTrend(conversions, orders > 0 ? Math.max(orders - conversions, 1) : null);
-  const customerTrend = formatTrend(customers, Math.max(customers - Math.floor(customers * 0.18), 1));
+  const unpaidInvoicesTrend = formatTrend(
+    unpaidInvoicesCount,
+    orders > unpaidInvoicesCount ? Math.max(orders - unpaidInvoicesCount, 1) : null,
+  );
+  const previousNewPatientsCount = useMemo(
+    () => countNewPatientsInRange(patients, previousRangeStart, previousRangeEnd),
+    [patients, previousRangeEnd, previousRangeStart],
+  );
+  const newPatientsTrend = formatTrend(newPatientsCount, previousNewPatientsCount);
+  const chartLineColor =
+    revenueTrend.tone === "positive"
+      ? "#22c55e"
+      : revenueTrend.tone === "negative"
+        ? "#ef4444"
+        : "#0f172a";
+  const chartAreaColor =
+    revenueTrend.tone === "positive"
+      ? "rgba(34, 197, 94, 0.18)"
+      : revenueTrend.tone === "negative"
+        ? "rgba(239, 68, 68, 0.18)"
+        : "var(--dashboard-chart-fill)";
 
   const kpis = [
     {
       key: "customers",
-      label: "CUSTOMERS",
-      value: customers.toString(),
-      trend: customerTrend,
+      label: "Nuovi Pazienti",
+      value: newPatientsCount.toString(),
+      trend: newPatientsTrend,
       icon: "customers" as const,
     },
     {
       key: "conversions",
-      label: "CONVERSIONS",
-      value: conversions.toString(),
-      trend: conversionTrend,
+      label: "Fatture Non Pagate",
+      value: unpaidInvoicesCount.toString(),
+      trend: unpaidInvoicesTrend,
       icon: "conversions" as const,
     },
     {
       key: "revenue",
-      label: "REVENUE",
+      label: "Incasso",
       value: currencyFormatter.format(currentWindowRevenue),
       trend: revenueTrend,
       icon: "revenue" as const,
     },
     {
       key: "appointments",
-      label: "APPOINTMENTS",
+      label: "Appuntamenti",
       value: upcomingAppointmentsCount.toString(),
       trend: appointmentsTrend,
       icon: "appointments" as const,
@@ -854,6 +910,15 @@ export default function DashboardPage() {
       }),
     [],
   );
+  const invoiceDateFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat("it-IT", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }),
+    [],
+  );
 
   const displayedRange = useMemo(() => {
     const apiFrom = snapshot?.stats?.range_start ? parseProjectDate(snapshot.stats.range_start) : null;
@@ -868,234 +933,188 @@ export default function DashboardPage() {
   const rangeLabel = `${shortDateFormatter.format(displayedRange.from)} - ${shortDateFormatter.format(displayedRange.to)}`;
 
   return (
-    <section className="halo-reveal">
-      <div className="bg-[var(--ui-panel-solid)]">
-        <div className="flex items-center justify-between border-b border-[var(--ui-border)] px-4 py-3">
-          <h1 className="text-[14px] font-semibold text-[var(--ui-text)]">Home</h1>
-          <div className="flex items-center gap-2 text-[var(--ui-muted)]">
-            <button type="button" className="inline-flex h-6 w-6 items-center justify-center rounded-full hover:bg-[var(--sidebar-item-hover-bg)]">
-              <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
-                <path d="M10 3.7a3.6 3.6 0 0 0-3.6 3.6v1.4c0 .7-.2 1.4-.6 2l-1.1 1.7h10.6l-1.1-1.7c-.4-.6-.6-1.3-.6-2V7.3A3.6 3.6 0 0 0 10 3.7Z" stroke="currentColor" strokeWidth="1.4" />
-                <path d="M8.6 14.2a1.4 1.4 0 0 0 2.8 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-              </svg>
-            </button>
-            <button type="button" className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[var(--ui-accent)] text-white">
-              <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
-                <path d="M10 5.2v9.6M5.2 10h9.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-              </svg>
-            </button>
-          </div>
+    <section className="halo-reveal halo-dashboard rounded-[var(--radius-xl)] bg-white p-4 sm:p-5">
+      <div className="mx-auto max-w-[1280px] space-y-5">
+        <div>
+          <h1 className="text-[1.75rem] font-semibold leading-tight text-[var(--ui-text)]">Panoramica Studio</h1>
+          <p className="mt-1 text-sm text-[var(--ui-muted)]">Vista essenziale delle metriche principali</p>
         </div>
 
-        <div className="border-b border-[var(--ui-border)] px-4 py-2">
-          <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
-            <span className="rounded-[0.45rem] border border-[var(--ui-border)] bg-[var(--ui-accent-soft)] px-2.5 py-1 font-medium text-[var(--ui-text)]">
-              Dashboard
-            </span>
-            <span className="rounded-[0.45rem] border border-[var(--ui-border)] bg-white px-2.5 py-1 font-medium text-[var(--ui-muted)]">
-              Appuntamenti
-            </span>
-            <span className="rounded-[0.45rem] border border-[var(--ui-border)] bg-white px-2.5 py-1 font-medium text-[var(--ui-muted)]">
-              Pazienti
-            </span>
-            <span className="rounded-[0.45rem] border border-[var(--ui-border)] bg-white px-2.5 py-1 font-medium text-[var(--ui-muted)]">
-              Fatture
-            </span>
-          </div>
-        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-[0.45rem] border border-[var(--ui-border)] bg-white px-2.5 py-1.5 text-[11px] text-[var(--ui-text)]"
+          >
+            <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+              <rect x="3.7" y="4.4" width="12.6" height="11.5" rx="2.3" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M3.9 8.2h12.2" stroke="currentColor" strokeWidth="1.2" />
+            </svg>
+            {rangeLabel}
+          </button>
 
-        <div className="border-b border-[var(--ui-border)] px-4 py-3">
-          <div className="flex flex-wrap items-center gap-2 text-[12px]">
+          {([
+            { key: "7d", label: "7 giorni" },
+            { key: "14d", label: "14 giorni" },
+            { key: "30d", label: "30 giorni" },
+            { key: "90d", label: "90 giorni" },
+            { key: "ytd", label: "Anno" },
+            { key: "custom", label: "Personalizzato" },
+          ] as const).map((preset) => (
             <button
+              key={preset.key}
               type="button"
-              className="inline-flex items-center gap-1 rounded-[0.4rem] border border-[var(--ui-border)] bg-[var(--ui-panel-solid)] px-2.5 py-1.5 text-[var(--ui-text)]"
+              onClick={() => handlePresetSelection(preset.key)}
+              className={`rounded-[0.45rem] border px-2 py-1 text-[11px] font-semibold transition ${
+                rangePreset === preset.key
+                  ? "border-[#111827] bg-[#111827] text-white"
+                  : "border-[var(--ui-border)] bg-white text-[var(--ui-muted)]"
+              }`}
             >
-              <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5">
-                <rect x="3.7" y="4.4" width="12.6" height="11.5" rx="2.3" stroke="currentColor" strokeWidth="1.3" />
-                <path d="M3.9 8.2h12.2" stroke="currentColor" strokeWidth="1.2" />
-              </svg>
-              {rangeLabel}
-              <span className="text-[10px] text-[var(--ui-muted)]">•</span>
+              {preset.label}
             </button>
-            {([
-              { key: "7d", label: "7d" },
-              { key: "14d", label: "14d" },
-              { key: "30d", label: "30d" },
-              { key: "90d", label: "90d" },
-              { key: "ytd", label: "YTD" },
-              { key: "custom", label: "Custom" },
-            ] as const).map((preset) => (
-              <button
-                key={preset.key}
-                type="button"
-                onClick={() => handlePresetSelection(preset.key)}
-                className={`rounded-[0.35rem] border px-2 py-1 text-[11px] font-semibold transition ${
-                  rangePreset === preset.key
-                    ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)] text-[var(--ui-accent)]"
-                    : "border-[var(--ui-border)] bg-[var(--ui-panel-solid)] text-[var(--ui-muted)] hover:text-[var(--ui-text)]"
-                }`}
-              >
-                {preset.label}
-              </button>
-            ))}
+          ))}
 
-            {rangePreset === "custom" ? (
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="date"
-                  value={customDateFrom}
-                  onChange={(event) => setCustomDateFrom(event.target.value)}
-                  className="h-7 rounded-[0.35rem] border border-[var(--ui-border)] bg-[var(--ui-panel-solid)] px-2 text-[11px] text-[var(--ui-text)]"
-                />
-                <span className="text-[10px] text-[var(--ui-muted)]">→</span>
-                <input
-                  type="date"
-                  value={customDateTo}
-                  onChange={(event) => setCustomDateTo(event.target.value)}
-                  className="h-7 rounded-[0.35rem] border border-[var(--ui-border)] bg-[var(--ui-panel-solid)] px-2 text-[11px] text-[var(--ui-text)]"
-                />
-              </div>
-            ) : null}
+          {rangePreset === "custom" ? (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={customDateFrom}
+                onChange={(event) => setCustomDateFrom(event.target.value)}
+                className="h-7 rounded-[0.45rem] border border-[var(--ui-border)] bg-white px-2 text-[11px] text-[var(--ui-text)]"
+              />
+              <span className="text-[10px] text-[var(--ui-muted)]">→</span>
+              <input
+                type="date"
+                value={customDateTo}
+                onChange={(event) => setCustomDateTo(event.target.value)}
+                className="h-7 rounded-[0.45rem] border border-[var(--ui-border)] bg-white px-2 text-[11px] text-[var(--ui-text)]"
+              />
+            </div>
+          ) : null}
 
-            <label className="inline-flex items-center gap-1 rounded-[0.4rem] border border-[var(--ui-border)] bg-[var(--ui-panel-solid)] px-2 py-1.5 text-[11px]">
-              <span className="text-[var(--ui-muted)]">Granularity</span>
-              <select
-                value={granularityMode}
-                onChange={(event) => setGranularityMode(event.target.value as GranularityMode)}
-                className="bg-transparent text-[var(--ui-text)] outline-none"
-              >
-                <option value="auto">Auto ({inferredGranularity})</option>
-                <option value="day">Daily</option>
-                <option value="week">Weekly</option>
-                <option value="month">Monthly</option>
-              </select>
-            </label>
-          </div>
+          <label className="inline-flex items-center gap-1 rounded-[0.45rem] border border-[var(--ui-border)] bg-white px-2 py-1.5 text-[11px]">
+            <span className="text-[var(--ui-muted)]">Dettaglio</span>
+            <select
+              value={granularityMode}
+              onChange={(event) => setGranularityMode(event.target.value as GranularityMode)}
+              className="bg-transparent text-[var(--ui-text)] outline-none"
+            >
+              <option value="auto">Auto ({inferredGranularity})</option>
+              <option value="day">Giornaliero</option>
+              <option value="week">Settimanale</option>
+              <option value="month">Mensile</option>
+            </select>
+          </label>
         </div>
 
-        {error ? <p className="px-4 py-3 text-[12px] text-[var(--status-danger-text)]">{error}</p> : null}
+        {error ? <p className="text-sm text-[var(--status-danger-text)]">{error}</p> : null}
 
-        <div className="px-4 py-4">
-          <section className="overflow-hidden rounded-[0.5rem] border border-[var(--dashboard-card-border)] bg-[var(--dashboard-card-bg)]">
-            <div className="grid sm:grid-cols-2 xl:grid-cols-4">
-              {kpis.map((kpi, index) => (
-                <article
-                  key={kpi.key}
-                  className={`px-4 py-4 ${index < kpis.length - 1 ? "border-b border-[var(--dashboard-card-border)] xl:border-r xl:border-b-0" : ""}`}
-                >
-                  <div className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[var(--dashboard-chart-fill)] text-[var(--dashboard-chart-line)]">
-                    <MetricIcon kind={kpi.icon} />
-                  </div>
-                  <p className="mt-2 text-[10px] font-semibold tracking-[0.08em] text-[var(--ui-muted)]">{kpi.label}</p>
-                  <div className="mt-0.5 flex items-center gap-1.5">
-                    <p className="text-[33px] leading-none tracking-[-0.02em] text-[var(--ui-text)]">{loading ? "-" : kpi.value}</p>
-                    <span className={`rounded-[0.3rem] px-1.5 py-0.5 text-[10px] font-semibold ${trendClass(kpi.trend.tone)}`}>
-                      {kpi.trend.label}
-                    </span>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {kpis.map((kpi) => (
+            <article key={kpi.key} className="rounded-[0.85rem] border border-[var(--ui-border)] bg-white px-4 py-4">
+              <div className="flex items-center justify-between">
+                <p className="text-[12px] font-semibold text-[var(--ui-text)]">{kpi.label}</p>
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full text-[var(--ui-muted)]">
+                  <MetricIcon kind={kpi.icon} />
+                </span>
+              </div>
+              <p className="mt-3 text-[1.9rem] font-semibold leading-none text-[var(--ui-text)]">{loading ? "-" : kpi.value}</p>
+            </article>
+          ))}
+        </section>
 
-          <section className="mt-4 overflow-hidden rounded-[0.5rem] border border-[var(--dashboard-card-border)] bg-[var(--dashboard-card-bg)]">
-            <div className="border-b border-[var(--dashboard-card-border)] px-4 py-3">
-              <p className="text-[10px] font-semibold tracking-[0.08em] text-[var(--ui-muted)]">REVENUE</p>
-              <h2 className="mt-1 text-[42px] leading-none tracking-[-0.03em] text-[var(--ui-text)]">
-                {loading ? "-" : currencyFormatter.format(currentWindowRevenue)}
-              </h2>
-            </div>
+        <section className="grid gap-3 xl:grid-cols-[1.85fr_1fr]">
+          <article className="overflow-hidden rounded-[0.85rem] border border-[var(--ui-border)] bg-white p-4">
+            <h2 className="text-[1rem] font-semibold text-[var(--ui-text)]">Andamento Incassi</h2>
+            <p className="mt-1 text-xs text-[var(--ui-muted)]">{rangeLabel}</p>
 
-            <div className="relative px-2 py-2">
+            <div className="mt-3">
               {loading || chart.points.length === 0 ? (
-                <div className="halo-skeleton h-[260px] w-full rounded-[0.45rem]" />
+                <div className="halo-skeleton h-[280px] w-full rounded-[0.6rem]" />
               ) : (
-                <svg viewBox={`0 0 ${chart.width} ${chart.height}`} className="h-[280px] w-full">
-                  {chart.points.map((point) => (
-                    <line
-                      key={`grid-${point.key}`}
-                      x1={point.x}
-                      y1={chart.padding}
-                      x2={point.x}
-                      y2={chart.baselineY}
-                      stroke="var(--ui-border)"
-                      strokeWidth="1"
+                <>
+                  <svg viewBox={`0 0 ${chart.width} ${chart.height}`} className="h-[300px] w-full">
+                    {chart.points.map((point) => (
+                      <line
+                        key={`grid-${point.key}`}
+                        x1={point.x}
+                        y1={chart.padding}
+                        x2={point.x}
+                        y2={chart.baselineY}
+                        stroke="var(--ui-border)"
+                        strokeWidth="1"
+                      />
+                    ))}
+                    <path d={chart.areaPath} fill={chartAreaColor} />
+                    <path
+                      d={chart.linePath}
+                      fill="none"
+                      stroke={chartLineColor}
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
                     />
-                  ))}
-                  <path d={chart.areaPath} fill="var(--dashboard-chart-fill)" />
-                  <path
-                    d={chart.linePath}
-                    fill="none"
-                    stroke="var(--dashboard-chart-line)"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
+                  </svg>
+
+                  <div className="mt-1 grid" style={{ gridTemplateColumns: `repeat(${chart.points.length}, minmax(0, 1fr))` }}>
+                    {chart.points.map((point, index) => (
+                      <span key={`label-${point.key}`} className="text-center text-[10px] text-[var(--ui-muted)]">
+                        {index % 2 === 0 ? shortDateFormatter.format(point.date) : ""}
+                      </span>
+                    ))}
+                  </div>
+                </>
               )}
-
-              {chart.points.length > 0 ? (
-                <div className="mt-1 grid" style={{ gridTemplateColumns: `repeat(${chart.points.length}, minmax(0, 1fr))` }}>
-                  {chart.points.map((point, index) => (
-                    <span key={`label-${point.key}`} className="text-center text-[10px] text-[var(--ui-muted)]">
-                      {index % 2 === 0 ? shortDateFormatter.format(point.date) : ""}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
             </div>
-          </section>
+          </article>
 
-          <section className="mt-4 overflow-hidden rounded-[0.5rem] border border-[var(--dashboard-card-border)] bg-[var(--dashboard-card-bg)]">
-            <div className="grid grid-cols-[0.7fr_1fr_0.8fr_1.3fr_0.7fr] border-b border-[var(--dashboard-card-border)] bg-[#fafbfc] px-4 py-2.5 text-[11px] font-semibold text-[var(--ui-muted)]">
-              <p>ID</p>
-              <p>Date</p>
-              <p>Status</p>
-              <p>Email</p>
-              <p className="text-right">Amount</p>
-            </div>
-
-            <div>
+          <article className="overflow-hidden rounded-[0.85rem] border border-[var(--ui-border)] bg-white p-4">
+            <h2 className="text-[1rem] font-semibold text-[var(--ui-text)]">Vendite Recenti</h2>
+            <div className="mt-3 space-y-1.5">
               {loading ? (
-                <div className="px-4 py-6 text-[12px] text-[var(--ui-muted)]">Loading transactions...</div>
+                <div className="space-y-2">
+                  <div className="halo-skeleton h-11 w-full rounded-[0.55rem]" />
+                  <div className="halo-skeleton h-11 w-full rounded-[0.55rem]" />
+                  <div className="halo-skeleton h-11 w-full rounded-[0.55rem]" />
+                </div>
               ) : latestInvoices.length === 0 ? (
-                <div className="px-4 py-6 text-[12px] text-[var(--ui-muted)]">No transactions.</div>
+                <p className="py-4 text-sm text-[var(--ui-muted)]">Nessun movimento disponibile.</p>
               ) : (
-                latestInvoices.map((invoice, index) => {
-                  const date = parseProjectDate(invoice.data);
-                  const dateLabel = date ? shortDateFormatter.format(date) : invoice.data;
-                  const timeLabel = pseudoTimeFromInvoice(invoice.id, index);
-                  const statusLabel = invoice.stato === "pagata" ? "Paid" : "Pending";
-                  const statusClass =
-                    invoice.stato === "pagata"
-                      ? "bg-[var(--status-success-bg)] text-[var(--status-success-text)]"
-                      : "bg-[var(--status-info-bg)] text-[var(--status-info-text)]";
-
+                latestInvoices.slice(0, 6).map((invoice) => {
+                  const fullName = `${(invoice.nome || "").trim()} ${(invoice.cognome || "").trim()}`.trim();
+                  const parsedInvoiceDate = parseProjectDate(invoice.data || "");
+                  const invoiceDateLabel = parsedInvoiceDate
+                    ? invoiceDateFormatter.format(parsedInvoiceDate)
+                    : "Data non disponibile";
+                  const invoiceAmount = Number(invoice.importo || 0);
+                  const isIncomingMovement = invoice.stato === "pagata" && invoiceAmount > 0;
+                  const amountLabel = currencyFormatter.format(invoiceAmount);
+                  const cardClassName = isIncomingMovement
+                    ? "border-[#22c55e] bg-[#dcfce7]"
+                    : "border-[var(--ui-border)] bg-white";
                   return (
                     <div
                       key={invoice.id}
-                      className="grid grid-cols-[0.7fr_1fr_0.8fr_1.3fr_0.7fr] items-center border-b border-[var(--dashboard-card-border)] px-4 py-2.5 text-[12px]"
+                      className={`flex items-center justify-between gap-3 rounded-[0.55rem] border px-2.5 py-2 ${cardClassName}`}
                     >
-                      <p className="font-medium text-[var(--ui-muted)]">#{invoice.id}</p>
-                      <p className="text-[var(--ui-muted)]">
-                        {dateLabel} at {timeLabel}
-                      </p>
-                      <p>
-                        <span className={`rounded-[0.3rem] px-1.5 py-0.5 text-[10px] font-semibold ${statusClass}`}>
-                          {statusLabel}
-                        </span>
-                      </p>
-                      <p className="truncate text-[var(--ui-muted)]">{buildEmailFromInvoice(invoice)}</p>
-                      <p className="text-right font-semibold text-[var(--ui-text)]">
-                        {currencyFormatter.format(Number(invoice.importo || 0))}
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-[var(--ui-text)]">
+                          {fullName || `Paziente #${invoice.id}`}
+                        </p>
+                        <p className="mt-0.5 text-xs text-[var(--ui-muted)]">
+                          {invoiceDateLabel}
+                        </p>
+                      </div>
+                      <p className="shrink-0 text-sm font-semibold text-[var(--ui-text)]">
+                        {isIncomingMovement ? `+${amountLabel}` : amountLabel}
                       </p>
                     </div>
                   );
                 })
               )}
             </div>
-          </section>
-        </div>
+          </article>
+        </section>
       </div>
     </section>
   );

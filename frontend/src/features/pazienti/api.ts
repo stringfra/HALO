@@ -16,6 +16,8 @@ type ClientApiRecord = {
   owner_user_id?: number | null;
   medico_nome?: string | null;
   owner_display_name?: string | null;
+  created_at?: string | null;
+  createdAt?: string | null;
 };
 
 export type Paziente = {
@@ -34,6 +36,8 @@ export type Paziente = {
   owner_user_id: number | null;
   medico_nome: string | null;
   owner_display_name: string | null;
+  created_at: string | null;
+  createdAt: string | null;
 };
 
 export type PazientePayload = {
@@ -53,6 +57,7 @@ function normalizeClient(record: ClientApiRecord): Paziente {
   const note = record.notes ?? record.note ?? null;
   const medicoId = record.owner_user_id ?? record.medico_id ?? null;
   const medicoNome = record.owner_display_name ?? record.medico_nome ?? null;
+  const createdAt = record.createdAt ?? record.created_at ?? null;
 
   return {
     id,
@@ -70,6 +75,8 @@ function normalizeClient(record: ClientApiRecord): Paziente {
     owner_user_id: medicoId,
     medico_nome: medicoNome,
     owner_display_name: medicoNome,
+    created_at: createdAt,
+    createdAt,
   };
 }
 
