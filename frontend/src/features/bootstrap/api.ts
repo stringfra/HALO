@@ -6,6 +6,7 @@ export type BootstrapNavigationItem = {
   key: string;
   label: string;
   href: string;
+  section?: string;
 };
 
 export type BootstrapRoleCatalogEntry = {
@@ -31,6 +32,15 @@ export type BootstrapData = {
       primary_color: string;
       secondary_color: string;
     };
+    vertical_template?: {
+      key: string;
+      name: string;
+      default_settings?: Record<string, unknown>;
+      default_labels?: Record<string, string>;
+      default_features?: Record<string, boolean>;
+      default_modules?: Record<string, boolean>;
+      default_roles?: string[];
+    };
     activity_style?: {
       primary_rgb: {
         r: number;
@@ -49,7 +59,65 @@ export type BootstrapData = {
   };
   enabled_modules: Record<string, unknown>;
   feature_flags: Record<string, boolean>;
+  feature_catalog?: Array<{
+    key: string;
+    module_key: string | null;
+    category: string;
+    description: string | null;
+    dependencies: string[];
+  }>;
   labels: Record<string, string>;
+  custom_fields?: {
+    schemas?: Record<
+      string,
+      {
+        entity_key: string;
+        core_fields: Array<{
+          field_key: string;
+          label: string;
+          type: string;
+          required: boolean;
+          active: boolean;
+          options: string[];
+          sort_order: number;
+          render_component: string;
+          is_core: boolean;
+          is_custom: boolean;
+        }>;
+        custom_fields: Array<{
+          field_key: string;
+          label: string;
+          type: string;
+          required: boolean;
+          active: boolean;
+          options: string[];
+          sort_order: number;
+          render_component: string;
+          is_core: boolean;
+          is_custom: boolean;
+        }>;
+        fields: Array<{
+          field_key: string;
+          label: string;
+          type: string;
+          required: boolean;
+          active: boolean;
+          options: string[];
+          sort_order: number;
+          render_component: string;
+          is_core: boolean;
+          is_custom: boolean;
+        }>;
+      }
+    >;
+  };
+  limits?: Record<string, unknown>;
+  workspace?: {
+    default_route?: string;
+    allowed_routes?: string[];
+    search_placeholder?: string;
+    workspace_label?: string;
+  };
   roles: string[];
   role_catalog: BootstrapRoleCatalogEntry[];
   navigation: BootstrapNavigationItem[];

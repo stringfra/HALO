@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   ruolo ruolo_utente NOT NULL,
+  account_status VARCHAR(20) NOT NULL DEFAULT 'active',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -291,6 +292,17 @@ CREATE TABLE IF NOT EXISTS tenant_audit_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS auth_events (
+  id BIGSERIAL PRIMARY KEY,
+  studio_id BIGINT NULL REFERENCES studi(id) ON DELETE SET NULL,
+  user_id BIGINT NULL REFERENCES users(id) ON DELETE SET NULL,
+  event_key VARCHAR(80) NOT NULL,
+  outcome VARCHAR(20) NOT NULL,
+  email VARCHAR(255) NULL,
+  metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS platform_audit_logs (
   id BIGSERIAL PRIMARY KEY,
   platform_account_id BIGINT NULL REFERENCES platform_accounts(id) ON DELETE SET NULL,
@@ -332,6 +344,7 @@ BEGIN
   ALTER TABLE studi ADD COLUMN IF NOT EXISTS settings_version INTEGER;
   ALTER TABLE studi ADD COLUMN IF NOT EXISTS is_active BOOLEAN;
   ALTER TABLE users ADD COLUMN IF NOT EXISTS studio_id BIGINT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status VARCHAR(20);
   ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS is_active BOOLEAN;
   ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN;
   ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS mfa_secret_encrypted TEXT;
@@ -425,6 +438,13 @@ BEGIN
   ALTER TABLE tenant_audit_logs ADD COLUMN IF NOT EXISTS entity_key VARCHAR(80);
   ALTER TABLE tenant_audit_logs ADD COLUMN IF NOT EXISTS changes_json JSONB;
   ALTER TABLE tenant_audit_logs ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+  ALTER TABLE auth_events ADD COLUMN IF NOT EXISTS studio_id BIGINT;
+  ALTER TABLE auth_events ADD COLUMN IF NOT EXISTS user_id BIGINT;
+  ALTER TABLE auth_events ADD COLUMN IF NOT EXISTS event_key VARCHAR(80);
+  ALTER TABLE auth_events ADD COLUMN IF NOT EXISTS outcome VARCHAR(20);
+  ALTER TABLE auth_events ADD COLUMN IF NOT EXISTS email VARCHAR(255);
+  ALTER TABLE auth_events ADD COLUMN IF NOT EXISTS metadata_json JSONB;
+  ALTER TABLE auth_events ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
   ALTER TABLE platform_audit_logs ADD COLUMN IF NOT EXISTS tenant_id BIGINT;
   ALTER TABLE platform_audit_logs ADD COLUMN IF NOT EXISTS request_ip VARCHAR(64);
   ALTER TABLE platform_audit_logs ADD COLUMN IF NOT EXISTS user_agent VARCHAR(255);
@@ -620,6 +640,10 @@ BEGIN
   SET updated_at = NOW()
   WHERE updated_at IS NULL;
 
+  UPDATE users
+  SET account_status = 'active'
+  WHERE account_status IS NULL OR TRIM(account_status) = '';
+
   UPDATE appointment_sync_outbox
   SET payload_json = '{}'::jsonb
   WHERE payload_json IS NULL;
@@ -752,6 +776,29 @@ BEGIN
   ALTER TABLE appointment_sync_outbox ALTER COLUMN created_at SET NOT NULL;
   ALTER TABLE pazienti ALTER COLUMN created_at SET DEFAULT NOW();
   ALTER TABLE pazienti ALTER COLUMN created_at SET NOT NULL;
+  ALTER TABLE users ALTER COLUMN account_status SET DEFAULT 'active';
+  ALTER TABLE users ALTER COLUMN account_status SET NOT NULL;
+  ALTER TABLE auth_events ALTER COLUMN metadata_json SET DEFAULT '{}'::jsonb;
+  ALTER TABLE auth_events ALTER COLUMN metadata_json SET NOT NULL;
+  ALTER TABLE auth_events ALTER COLUMN created_at SET DEFAULT NOW();
+  ALTER TABLE auth_events ALTER COLUMN created_at SET NOT NULL;
+
+  IF EXISTS (
+    SELECT 1
+    FROM (
+      SELECT LOWER(TRIM(email)) AS normalized_email
+      FROM users
+      GROUP BY LOWER(TRIM(email))
+      HAVING COUNT(*) > 1
+    ) duplicate_email
+  ) THEN
+    RAISE EXCEPTION
+      'Trovate email duplicate case-insensitive in users. Risolvere prima di applicare enforcement globale.';
+  END IF;
+
+  UPDATE users
+  SET email = LOWER(TRIM(email))
+  WHERE email <> LOWER(TRIM(email));
 
   UPDATE users
   SET studio_id = default_studio_id
@@ -806,6 +853,17 @@ BEGIN
     ALTER TABLE users
     ADD CONSTRAINT fk_users_studio_id
     FOREIGN KEY (studio_id) REFERENCES studi(id) ON DELETE RESTRICT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'ck_users_account_status'
+      AND conrelid = 'users'::regclass
+  ) THEN
+    ALTER TABLE users
+    ADD CONSTRAINT ck_users_account_status
+    CHECK (account_status IN ('active', 'suspended'));
   END IF;
 
   IF NOT EXISTS (
@@ -993,10 +1051,49 @@ BEGIN
     ADD CONSTRAINT ck_appointment_sync_outbox_status
     CHECK (status IN ('pending', 'processing', 'retry', 'done', 'failed'));
   END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'fk_auth_events_studio_id'
+      AND conrelid = 'auth_events'::regclass
+  ) THEN
+    ALTER TABLE auth_events
+    ADD CONSTRAINT fk_auth_events_studio_id
+    FOREIGN KEY (studio_id) REFERENCES studi(id) ON DELETE SET NULL;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'fk_auth_events_user_id'
+      AND conrelid = 'auth_events'::regclass
+  ) THEN
+    ALTER TABLE auth_events
+    ADD CONSTRAINT fk_auth_events_user_id
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'ck_auth_events_outcome'
+      AND conrelid = 'auth_events'::regclass
+  ) THEN
+    ALTER TABLE auth_events
+    ADD CONSTRAINT ck_auth_events_outcome
+    CHECK (outcome IN ('success', 'failure'));
+  END IF;
 END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email_ci
+  ON users ((LOWER(email)));
 
 CREATE INDEX IF NOT EXISTS idx_users_studio_id
   ON users (studio_id);
+
+CREATE INDEX IF NOT EXISTS idx_users_account_status
+  ON users (account_status);
 
 CREATE INDEX IF NOT EXISTS idx_studi_vertical_key
   ON studi (vertical_key);
@@ -1042,6 +1139,15 @@ CREATE INDEX IF NOT EXISTS idx_fatture_studio_id
 
 CREATE INDEX IF NOT EXISTS idx_prodotti_studio_id
   ON prodotti (studio_id);
+
+CREATE INDEX IF NOT EXISTS idx_auth_events_studio_id_created_at
+  ON auth_events (studio_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_auth_events_user_id_created_at
+  ON auth_events (user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_auth_events_event_key_created_at
+  ON auth_events (event_key, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_appuntamenti_paziente_id
   ON appuntamenti (paziente_id);

@@ -19,6 +19,7 @@ async function ensureUserRbacConsistency(user) {
 
   try {
     await client.query("BEGIN");
+    await ensureSystemRolesForTenant(client, studioId);
     const hasMatchingAssignment = await hasMatchingSystemRoleAssignment(
       client,
       studioId,
@@ -27,7 +28,6 @@ async function ensureUserRbacConsistency(user) {
     );
 
     if (!hasMatchingAssignment) {
-      await ensureSystemRolesForTenant(client, studioId);
       await assignSystemRoleToUser(client, studioId, userId, roleKey);
     }
 

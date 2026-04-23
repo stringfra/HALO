@@ -100,6 +100,15 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+function normalizeEmailIdentity(value) {
+  const normalized = normalizeRequiredText(value, { min: 6, max: 255 });
+  if (!normalized || !isValidEmail(normalized)) {
+    return null;
+  }
+
+  return normalized.toLowerCase();
+}
+
 function isValidPhone(value) {
   if (typeof value !== "string") {
     return false;
@@ -220,6 +229,7 @@ module.exports = {
   parsePositiveAmount,
   normalizeRequiredText,
   normalizeOptionalText,
+  normalizeEmailIdentity,
   isValidEmail,
   isValidPhone,
   isStrongPassword,

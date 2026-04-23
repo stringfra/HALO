@@ -1,9 +1,16 @@
 const express = require("express");
 const { pool } = require("../config/db");
-const { verifyToken, authorize, requirePermission } = require("../../middlewares/authMiddleware");
+const { verifyToken, requirePermission } = require("../../middlewares/authMiddleware");
 const { requireFeature } = require("../middleware/feature-flags");
 const { listCustomFieldValues } = require("../services/custom-fields.service");
 const { serializeClient } = require("../services/domain-aliases.service");
+const {
+  createClientInLegacyStorage,
+  deleteClientFromLegacyStorage,
+  findPractitionerById,
+  listClientsFromLegacyStorage,
+  updateClientInLegacyStorage,
+} = require("../services/domain-entity-adapters.service");
 const {
   hasOnlyKeys,
   isValidEmail,
@@ -29,8 +36,6 @@ const createKeys = [
   "owner_user_id",
 ];
 const updateKeys = createKeys;
-const allRoles = ["ADMIN", "DENTISTA", "SEGRETARIO", "DIPENDENTE"];
-const adminSegretarioRoles = ["ADMIN", "SEGRETARIO"];
 
 function isPractitionerRole(role) {
   const normalizedRole = String(role || "").trim().toUpperCase();
@@ -39,56 +44,102 @@ function isPractitionerRole(role) {
 
 function resolveClientCreatePayload(body) {
   return {
-    nome: body?.nome ?? body?.first_name,
-    cognome: body?.cognome ?? body?.last_name,
-    telefono: body?.telefono ?? body?.phone,
+    first_name: body?.first_name ?? body?.nome,
+    last_name: body?.last_name ?? body?.cognome,
+    phone: body?.phone ?? body?.telefono,
     email: body?.email,
-    note: body?.note ?? body?.notes,
-    medico_id: body?.medico_id ?? body?.owner_user_id,
+    notes: body?.notes ?? body?.note,
+    owner_user_id: body?.owner_user_id ?? body?.medico_id,
   };
 }
 
 function resolveClientUpdatePayload(body) {
   const payload = {};
 
-  if (Object.prototype.hasOwnProperty.call(body, "nome") || Object.prototype.hasOwnProperty.call(body, "first_name")) {
-    payload.nome = body?.nome ?? body?.first_name;
+  if (Object.prototype.hasOwnProperty.call(body, "first_name") || Object.prototype.hasOwnProperty.call(body, "nome")) {
+    payload.first_name = body?.first_name ?? body?.nome;
   }
-  if (Object.prototype.hasOwnProperty.call(body, "cognome") || Object.prototype.hasOwnProperty.call(body, "last_name")) {
-    payload.cognome = body?.cognome ?? body?.last_name;
+  if (Object.prototype.hasOwnProperty.call(body, "last_name") || Object.prototype.hasOwnProperty.call(body, "cognome")) {
+    payload.last_name = body?.last_name ?? body?.cognome;
   }
-  if (Object.prototype.hasOwnProperty.call(body, "telefono") || Object.prototype.hasOwnProperty.call(body, "phone")) {
-    payload.telefono = body?.telefono ?? body?.phone;
+  if (Object.prototype.hasOwnProperty.call(body, "phone") || Object.prototype.hasOwnProperty.call(body, "telefono")) {
+    payload.phone = body?.phone ?? body?.telefono;
   }
   if (Object.prototype.hasOwnProperty.call(body, "email")) {
     payload.email = body?.email;
   }
-  if (Object.prototype.hasOwnProperty.call(body, "note") || Object.prototype.hasOwnProperty.call(body, "notes")) {
-    payload.note = body?.note ?? body?.notes;
+  if (Object.prototype.hasOwnProperty.call(body, "notes") || Object.prototype.hasOwnProperty.call(body, "note")) {
+    payload.notes = body?.notes ?? body?.note;
   }
-  if (Object.prototype.hasOwnProperty.call(body, "medico_id") || Object.prototype.hasOwnProperty.call(body, "owner_user_id")) {
-    payload.medico_id = body?.medico_id ?? body?.owner_user_id;
+  if (Object.prototype.hasOwnProperty.call(body, "owner_user_id") || Object.prototype.hasOwnProperty.call(body, "medico_id")) {
+    payload.owner_user_id = body?.owner_user_id ?? body?.medico_id;
   }
 
   return payload;
 }
 
-async function findDentistById(studioId, medicoId) {
-  if (!medicoId) {
+async function findOwnerById(studioId, ownerUserId) {
+  if (!ownerUserId) {
     return null;
   }
 
+  return findPractitionerById({ studioId, ownerUserId });
+}
+
+async function listTenantPractitioners(studioId) {
   const result = await pool.query(
-    `SELECT id, nome
+    `SELECT id,
+            nome AS owner_display_name
      FROM users
-     WHERE id = $1
-       AND studio_id = $2
+     WHERE studio_id = $1
        AND ruolo IN ('DENTISTA', 'DIPENDENTE')
-     LIMIT 1`,
-    [medicoId, studioId],
+     ORDER BY id ASC`,
+    [studioId],
   );
 
-  return result.rows[0] ?? null;
+  return result.rows.map((row) => ({
+    id: Number(row.id),
+    owner_display_name: row.owner_display_name || null,
+  }));
+}
+
+async function resolveOwnerForCreate({
+  studioId,
+  requestedOwnerUserId,
+  actorUserId,
+  actorRole,
+}) {
+  if (requestedOwnerUserId) {
+    const owner = await findOwnerById(studioId, requestedOwnerUserId);
+    if (!owner) {
+      const error = new Error("Il responsabile selezionato non esiste o non appartiene allo studio.");
+      error.statusCode = 400;
+      throw error;
+    }
+    return {
+      id: Number(owner.id),
+      owner_display_name: owner.owner_display_name || null,
+    };
+  }
+
+  if (isPractitionerRole(actorRole)) {
+    const owner = await findOwnerById(studioId, Number(actorUserId));
+    if (owner) {
+      return {
+        id: Number(owner.id),
+        owner_display_name: owner.owner_display_name || null,
+      };
+    }
+  }
+
+  const practitioners = await listTenantPractitioners(studioId);
+  if (practitioners.length === 0) {
+    const error = new Error("Nessun responsabile disponibile nel tenant.");
+    error.statusCode = 409;
+    throw error;
+  }
+
+  return practitioners[0];
 }
 
 router.use(verifyToken);
@@ -97,31 +148,13 @@ router.use(requireFeature("clients.enabled"));
 router.get("/", requirePermission("clients.read"), async (req, res) => {
   try {
     const studioId = Number(req.user?.studio_id);
-    const params = [studioId];
-    let query = `SELECT p.id,
-                        p.nome,
-                        p.cognome,
-                        p.telefono,
-                        p.email,
-                        p.note,
-                        (to_jsonb(p)->>'created_at')::timestamptz AS created_at,
-                        p.medico_id,
-                        u.nome AS medico_nome
-                 FROM pazienti p
-                 LEFT JOIN users u ON u.id = p.medico_id
-                                  AND u.studio_id = p.studio_id
-                 WHERE p.studio_id = $1`;
-
-    if (isPractitionerRole(req.user?.ruolo)) {
-      params.push(req.user.id);
-      query += " AND p.medico_id = $2";
-    }
-
-    query += " ORDER BY p.id DESC";
-
-    const result = await pool.query(query, params);
+    const ownerUserId = isPractitionerRole(req.user?.ruolo) ? Number(req.user?.id) : null;
+    const rawClients = await listClientsFromLegacyStorage({
+      studioId,
+      ownerUserId,
+    });
     const rows = await Promise.all(
-      result.rows.map(async (row) =>
+      rawClients.map(async (row) =>
         serializeClient({
           ...row,
           custom_fields: await listCustomFieldValues(studioId, "clients", Number(row.id)),
@@ -131,7 +164,7 @@ router.get("/", requirePermission("clients.read"), async (req, res) => {
     return res.status(200).json(rows);
   } catch (error) {
     return res.status(500).json({
-      message: "Errore nel recupero pazienti.",
+      message: "Errore nel recupero clienti.",
       detail: error.message,
     });
   }
@@ -145,22 +178,22 @@ router.post("/", requirePermission("clients.write"), async (req, res) => {
   }
 
   const payload = resolveClientCreatePayload(req.body);
-  const nome = normalizeRequiredText(payload?.nome, { min: 2, max: 100 });
-  const cognome = normalizeRequiredText(payload?.cognome, { min: 2, max: 100 });
-  const telefonoInput = payload?.telefono;
+  const firstName = normalizeRequiredText(payload?.first_name, { min: 2, max: 100 });
+  const lastName = normalizeRequiredText(payload?.last_name, { min: 2, max: 100 });
+  const phoneInput = payload?.phone;
   const emailInput = payload?.email;
-  const noteInput = payload?.note;
-  const medicoId = parsePositiveInt(payload?.medico_id);
-  const telefono = normalizeOptionalText(payload?.telefono, { max: 30 });
+  const notesInput = payload?.notes;
+  const ownerUserId = parsePositiveInt(payload?.owner_user_id);
+  const phone = normalizeOptionalText(payload?.phone, { max: 30 });
   const email = normalizeOptionalText(payload?.email, { max: 255 });
-  const note = normalizeOptionalText(payload?.note, { max: 2000, multiline: true });
+  const notes = normalizeOptionalText(payload?.notes, { max: 2000, multiline: true });
 
-  if (!nome || !cognome) {
+  if (!firstName || !lastName) {
     return res.status(400).json({
       message: "Nome e cognome sono obbligatori (2-100 caratteri).",
     });
   }
-  if (telefonoInput !== undefined && telefonoInput !== null && typeof telefonoInput !== "string") {
+  if (phoneInput !== undefined && phoneInput !== null && typeof phoneInput !== "string") {
     return res.status(400).json({
       message: "Telefono non valido.",
     });
@@ -170,22 +203,26 @@ router.post("/", requirePermission("clients.write"), async (req, res) => {
       message: "Email non valida.",
     });
   }
-  if (noteInput !== undefined && noteInput !== null && typeof noteInput !== "string") {
+  if (notesInput !== undefined && notesInput !== null && typeof notesInput !== "string") {
     return res.status(400).json({
       message: "Note non valide.",
     });
   }
-  if (typeof noteInput === "string" && noteInput.trim().length > 0 && note === null) {
+  if (typeof notesInput === "string" && notesInput.trim().length > 0 && notes === null) {
     return res.status(400).json({
       message: "Note non valide (massimo 2000 caratteri).",
     });
   }
-  if (!medicoId) {
+  if (
+    payload?.owner_user_id !== undefined &&
+    payload?.owner_user_id !== null &&
+    !ownerUserId
+  ) {
     return res.status(400).json({
-      message: "medico_id non valido.",
+      message: "owner_user_id/medico_id non valido.",
     });
   }
-  if (telefono && !isValidPhone(telefono)) {
+  if (phone && !isValidPhone(phone)) {
     return res.status(400).json({
       message: "Telefono non valido.",
     });
@@ -198,35 +235,36 @@ router.post("/", requirePermission("clients.write"), async (req, res) => {
 
   try {
     const studioId = Number(req.user?.studio_id);
-    const dentist = await findDentistById(studioId, medicoId);
+    const owner = await resolveOwnerForCreate({
+      studioId,
+      requestedOwnerUserId: ownerUserId,
+      actorUserId: req.user?.id,
+      actorRole: req.user?.ruolo,
+    });
 
-    if (!dentist) {
-      return res.status(400).json({
-        message: "Il dottore selezionato non esiste o non appartiene allo studio.",
-      });
-    }
-
-    const result = await pool.query(
-      `INSERT INTO pazienti (studio_id, medico_id, nome, cognome, telefono, email, note)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id,
-                 nome,
-                 cognome,
-                 telefono,
-                 email,
-                 note,
-                 (to_jsonb(pazienti)->>'created_at')::timestamptz AS created_at,
-                 medico_id`,
-      [studioId, medicoId, nome, cognome, telefono, email, note],
-    );
+    const createdClient = await createClientInLegacyStorage({
+      studioId,
+      firstName,
+      lastName,
+      phone,
+      email,
+      notes,
+      ownerUserId: owner.id,
+    });
     return res.status(201).json(serializeClient({
-      ...result.rows[0],
-      medico_nome: dentist.nome,
+      ...createdClient,
+      owner_display_name: owner.owner_display_name,
       custom_fields: {},
     }));
   } catch (error) {
+    if (Number.isInteger(error?.statusCode)) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
     return res.status(500).json({
-      message: "Errore nella creazione paziente.",
+      message: "Errore nella creazione cliente.",
       detail: error.message,
     });
   }
@@ -234,10 +272,10 @@ router.post("/", requirePermission("clients.write"), async (req, res) => {
 
 router.put("/:id", requirePermission("clients.write"), async (req, res) => {
   const studioId = Number(req.user?.studio_id);
-  const patientId = parsePositiveInt(req.params.id);
-  if (!patientId) {
+  const clientId = parsePositiveInt(req.params.id);
+  if (!clientId) {
     return res.status(400).json({
-      message: "ID paziente non valido.",
+      message: "ID client non valido.",
     });
   }
 
@@ -248,39 +286,34 @@ router.put("/:id", requirePermission("clients.write"), async (req, res) => {
   }
 
   const payload = resolveClientUpdatePayload(req.body);
-  const fields = [];
-  const values = [];
-  let index = 1;
+  const updates = {};
 
-  if (payload?.nome !== undefined) {
-    const nome = normalizeRequiredText(payload.nome, { min: 2, max: 100 });
-    if (!nome) {
+  if (payload?.first_name !== undefined) {
+    const firstName = normalizeRequiredText(payload.first_name, { min: 2, max: 100 });
+    if (!firstName) {
       return res.status(400).json({ message: "Nome non valido (2-100 caratteri)." });
     }
-    fields.push(`nome = $${index++}`);
-    values.push(nome);
+    updates.first_name = firstName;
   }
 
-  if (payload?.cognome !== undefined) {
-    const cognome = normalizeRequiredText(payload.cognome, { min: 2, max: 100 });
-    if (!cognome) {
+  if (payload?.last_name !== undefined) {
+    const lastName = normalizeRequiredText(payload.last_name, { min: 2, max: 100 });
+    if (!lastName) {
       return res.status(400).json({ message: "Cognome non valido (2-100 caratteri)." });
     }
-    fields.push(`cognome = $${index++}`);
-    values.push(cognome);
+    updates.last_name = lastName;
   }
 
-  if (payload?.telefono !== undefined) {
-    const telefonoInput = payload.telefono;
-    if (telefonoInput !== null && typeof telefonoInput !== "string") {
+  if (payload?.phone !== undefined) {
+    const phoneInput = payload.phone;
+    if (phoneInput !== null && typeof phoneInput !== "string") {
       return res.status(400).json({ message: "Telefono non valido." });
     }
-    const telefono = normalizeOptionalText(telefonoInput, { max: 30 });
-    if (telefono && !isValidPhone(telefono)) {
+    const phone = normalizeOptionalText(phoneInput, { max: 30 });
+    if (phone && !isValidPhone(phone)) {
       return res.status(400).json({ message: "Telefono non valido." });
     }
-    fields.push(`telefono = $${index++}`);
-    values.push(telefono);
+    updates.phone = phone;
   }
 
   if (payload?.email !== undefined) {
@@ -292,91 +325,70 @@ router.put("/:id", requirePermission("clients.write"), async (req, res) => {
     if (email && !isValidEmail(email)) {
       return res.status(400).json({ message: "Email non valida." });
     }
-    fields.push(`email = $${index++}`);
-    values.push(email);
+    updates.email = email;
   }
 
-  if (payload?.note !== undefined) {
-    const noteInput = payload.note;
-    if (noteInput !== null && typeof noteInput !== "string") {
+  if (payload?.notes !== undefined) {
+    const notesInput = payload.notes;
+    if (notesInput !== null && typeof notesInput !== "string") {
       return res.status(400).json({ message: "Note non valide." });
     }
-    const note = normalizeOptionalText(noteInput, { max: 2000, multiline: true });
-    if (typeof noteInput === "string" && noteInput.trim().length > 0 && note === null) {
+    const notes = normalizeOptionalText(notesInput, { max: 2000, multiline: true });
+    if (typeof notesInput === "string" && notesInput.trim().length > 0 && notes === null) {
       return res.status(400).json({
         message: "Note non valide (massimo 2000 caratteri).",
       });
     }
-    fields.push(`note = $${index++}`);
-    values.push(note);
+    updates.notes = notes;
   }
-
-  let nextMedicoId = null;
-  if (payload?.medico_id !== undefined) {
-    nextMedicoId = parsePositiveInt(payload.medico_id);
-    if (!nextMedicoId) {
-      return res.status(400).json({ message: "medico_id non valido." });
-    }
-  }
-
-  if (fields.length === 0 && nextMedicoId === null) {
-    return res.status(400).json({
-      message: "Nessun campo valido da aggiornare.",
-    });
-  }
-
-  values.push(patientId);
-  values.push(studioId);
 
   try {
-    if (nextMedicoId !== null) {
-      const dentist = await findDentistById(studioId, nextMedicoId);
-      if (!dentist) {
-        return res.status(400).json({
-          message: "Il dottore selezionato non esiste o non appartiene allo studio.",
-        });
+    if (payload?.owner_user_id !== undefined) {
+      const ownerUserId = parsePositiveInt(payload.owner_user_id);
+      if (!ownerUserId) {
+        return res.status(400).json({ message: "owner_user_id non valido." });
       }
 
-      fields.push(`medico_id = $${index++}`);
-      values.splice(values.length - 2, 0, nextMedicoId);
+      const owner = await findOwnerById(studioId, ownerUserId);
+      if (!owner) {
+        return res.status(400).json({
+          message: "Il responsabile selezionato non esiste o non appartiene allo studio.",
+        });
+      }
+      updates.owner_user_id = ownerUserId;
     }
 
-    const result = await pool.query(
-      `UPDATE pazienti
-       SET ${fields.join(", ")}
-       WHERE id = $${index}
-         AND studio_id = $${index + 1}
-       RETURNING id,
-                 nome,
-                 cognome,
-                 telefono,
-                 email,
-                 note,
-                 (to_jsonb(pazienti)->>'created_at')::timestamptz AS created_at,
-                 medico_id`,
-      values,
-    );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: "Paziente non trovato." });
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({
+        message: "Nessun campo valido da aggiornare.",
+      });
     }
 
-    const updatedPatient = result.rows[0];
-    let medicoNome = null;
+    const updatedClient = await updateClientInLegacyStorage({
+      studioId,
+      clientId,
+      updates,
+    });
 
-    if (updatedPatient.medico_id) {
-      const dentist = await findDentistById(studioId, updatedPatient.medico_id);
-      medicoNome = dentist?.nome ?? null;
+    if (!updatedClient) {
+      return res.status(404).json({ message: "Client non trovato." });
+    }
+
+    let ownerDisplayName = null;
+
+    if (updatedClient.owner_user_id) {
+      const owner = await findOwnerById(studioId, updatedClient.owner_user_id);
+      ownerDisplayName = owner?.owner_display_name ?? null;
     }
 
     return res.status(200).json(serializeClient({
-      ...updatedPatient,
-      medico_nome: medicoNome,
-      custom_fields: await listCustomFieldValues(studioId, "clients", Number(updatedPatient.id)),
+      ...updatedClient,
+      owner_display_name: ownerDisplayName,
+      custom_fields: await listCustomFieldValues(studioId, "clients", Number(updatedClient.id)),
     }));
   } catch (error) {
     return res.status(500).json({
-      message: "Errore nell'aggiornamento paziente.",
+      message: "Errore nell'aggiornamento client.",
       detail: error.message,
     });
   }
@@ -384,34 +396,37 @@ router.put("/:id", requirePermission("clients.write"), async (req, res) => {
 
 router.delete("/:id", requirePermission("clients.write"), async (req, res) => {
   const studioId = Number(req.user?.studio_id);
-  const patientId = parsePositiveInt(req.params.id);
-  if (!patientId) {
+  const clientId = parsePositiveInt(req.params.id);
+  if (!clientId) {
     return res.status(400).json({
-      message: "ID paziente non valido.",
+      message: "ID client non valido.",
     });
   }
 
   try {
-    const result = await pool.query(
-      `DELETE FROM pazienti
-       WHERE id = $1
-         AND studio_id = $2
-       RETURNING id`,
-      [patientId, studioId],
-    );
+    const deletedClient = await deleteClientFromLegacyStorage({
+      studioId,
+      clientId,
+    });
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: "Paziente non trovato." });
+    if (!deletedClient) {
+      return res.status(404).json({ message: "Client non trovato." });
     }
 
     return res.status(200).json({
-      message: "Paziente eliminato con successo.",
-      id: result.rows[0].id,
-      client_id: result.rows[0].id,
+      message: "Client eliminato con successo.",
+      id: deletedClient.id,
+      client_id: deletedClient.client_id,
     });
   } catch (error) {
+    if (error?.code === "23503") {
+      return res.status(409).json({
+        message: "Impossibile eliminare il paziente: esistono record collegati (es. fatture).",
+      });
+    }
+
     return res.status(500).json({
-      message: "Errore nell'eliminazione paziente.",
+      message: "Errore nell'eliminazione client.",
       detail: error.message,
     });
   }

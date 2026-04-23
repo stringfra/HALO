@@ -1,7 +1,8 @@
 const jwt = require("jsonwebtoken");
+const { LEGACY_ROLE_PERMISSIONS } = require("../config/multi-sector");
 
 const TENANT_IDENTITY_TYPE = "tenant_user";
-const allowedRoles = new Set(["ADMIN", "DENTISTA", "SEGRETARIO", "DIPENDENTE"]);
+const allowedRoles = new Set(Object.keys(LEGACY_ROLE_PERMISSIONS));
 
 function parsePositiveId(value) {
   if (typeof value === "number" && Number.isInteger(value) && value > 0) {
@@ -32,10 +33,20 @@ function normalizePermissions(value) {
     .sort();
 }
 
+function normalizeTenantCode(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 function buildTenantUserAuthContext(user, permissions = []) {
   const userId = parsePositiveId(user?.id);
   const studioId = parsePositiveId(user?.studio_id);
   const role = normalizeRole(user?.ruolo);
+  const tenantCode = normalizeTenantCode(user?.tenant_code);
 
   if (!userId || !studioId || !allowedRoles.has(role)) {
     throw new Error("Contesto tenant non valido.");
@@ -46,6 +57,7 @@ function buildTenantUserAuthContext(user, permissions = []) {
     userId,
     studioId,
     role,
+    tenantCode,
     permissions: normalizePermissions(permissions),
   };
 }
@@ -57,6 +69,7 @@ function toJwtPayload(authContext) {
       id: authContext.userId,
       ruolo: authContext.role,
       studio_id: authContext.studioId,
+      ...(authContext.tenantCode ? { tenant_code: authContext.tenantCode } : {}),
       permissions: normalizePermissions(authContext.permissions),
     };
   }
@@ -87,6 +100,7 @@ function parseAuthContextFromPayload(payload) {
     const userId = parsePositiveId(payload?.id);
     const studioId = parsePositiveId(payload?.studio_id);
     const role = normalizeRole(payload?.ruolo);
+    const tenantCode = normalizeTenantCode(payload?.tenant_code);
 
     if (!userId || !studioId || !allowedRoles.has(role)) {
       return null;
@@ -97,6 +111,7 @@ function parseAuthContextFromPayload(payload) {
       userId,
       studioId,
       role,
+      tenantCode,
       permissions: normalizePermissions(payload?.permissions),
     };
   }

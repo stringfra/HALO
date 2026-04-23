@@ -9,6 +9,7 @@ import type { AppSidebarItem } from "@/components/layout/sidebar-types";
 type AppSidebarProps = {
   pathname: string;
   items: AppSidebarItem[];
+  homeHref: string;
   brandProductName: string;
   userLabel: string;
   collapsed: boolean;
@@ -18,20 +19,17 @@ type AppSidebarProps = {
 };
 
 function buildStructuredSidebar(items: AppSidebarItem[]) {
-  const operativoKeys = new Set(["dashboard", "agenda", "clients", "pazienti"]);
-  const amministrazioneKeys = new Set(["billing", "inventory", "settings", "fatture", "magazzino", "impostazioni"]);
-
   const operativo: AppSidebarItem[] = [];
   const amministrazione: AppSidebarItem[] = [];
   const extra: AppSidebarItem[] = [];
 
   for (const item of items) {
-    const key = String(item.key || "").toLowerCase();
-    if (operativoKeys.has(key)) {
+    const section = String(item.section || "").trim().toLowerCase();
+    if (section === "operativo") {
       operativo.push(item);
       continue;
     }
-    if (amministrazioneKeys.has(key)) {
+    if (section === "amministrazione") {
       amministrazione.push(item);
       continue;
     }
@@ -64,6 +62,7 @@ function SectionLabel({ label, collapsed }: { label: string; collapsed: boolean 
 export function AppSidebar({
   pathname,
   items,
+  homeHref,
   brandProductName,
   userLabel,
   collapsed,
@@ -95,7 +94,7 @@ export function AppSidebar({
       >
         <div className="flex w-full flex-col p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <Link href="/dashboard" className={`inline-flex min-w-0 items-center gap-2 ${collapsed ? "px-1" : "px-1.5 py-1"}`}>
+            <Link href={homeHref} className={`inline-flex min-w-0 items-center gap-2 ${collapsed ? "px-1" : "px-1.5 py-1"}`}>
               <BrandMark />
               {!collapsed ? (
                 <span className="truncate text-[13px] font-semibold tracking-[0.01em] text-[var(--ui-text)]">

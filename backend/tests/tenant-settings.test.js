@@ -91,3 +91,27 @@ test("mergeTenantSettingsPatch deep merges activities updates", () => {
     },
   });
 });
+
+test("mergeTenantSettingsPatch deep merges workflow updates", () => {
+  const current = {
+    workflow: {
+      client_assignment_mode: "required_owner",
+      appointment_owner_source: "client_owner",
+      billing_mode: "manual_or_appointment",
+    },
+  };
+
+  const next = mergeTenantSettingsPatch(current, {
+    workflow: {
+      billing_mode: "service_based",
+    },
+  });
+
+  assert.deepEqual(next, {
+    workflow: {
+      client_assignment_mode: "required_owner",
+      appointment_owner_source: "client_owner",
+      billing_mode: "service_based",
+    },
+  });
+});

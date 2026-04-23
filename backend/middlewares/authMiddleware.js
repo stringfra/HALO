@@ -3,6 +3,7 @@ const {
   TENANT_IDENTITY_TYPE,
   verifyJwtToken,
 } = require("../src/services/auth-context.service");
+const { resolveActiveTenantUserById } = require("../src/services/tenant-auth-resolution.service");
 
 function logAuthDenied(req, reason, extra = {}) {
   const requestId = req.requestId || "n/a";
@@ -37,7 +38,7 @@ function extractBearerToken(authorizationHeader) {
   return token;
 }
 
-function verifyToken(req, res, next) {
+async function verifyToken(req, res, next) {
   const token = extractBearerToken(req.headers?.authorization);
   if (!token) {
     logAuthDenied(req, "missing_or_invalid_authorization_header");
@@ -66,11 +67,32 @@ function verifyToken(req, res, next) {
       });
     }
 
+    const activeTenantUser = await resolveActiveTenantUserById(authContext.userId);
+    if (!activeTenantUser) {
+      logAuthDenied(req, "tenant_user_not_active_or_not_found", {
+        authUserId: authContext.userId,
+      });
+      return res.status(401).json({
+        message: "Sessione non valida per utente o tenant non attivo.",
+      });
+    }
+
+    if (Number(activeTenantUser.studio_id) !== Number(authContext.studioId)) {
+      logAuthDenied(req, "tenant_session_mismatch", {
+        tokenStudioId: authContext.studioId,
+        dbStudioId: activeTenantUser.studio_id,
+      });
+      return res.status(403).json({
+        message: "Mismatch tenant/sessione. Effettua di nuovo il login.",
+      });
+    }
+
     req.auth = authContext;
     req.user = {
-      id: authContext.userId,
-      studio_id: authContext.studioId,
-      ruolo: authContext.role,
+      id: activeTenantUser.id,
+      studio_id: activeTenantUser.studio_id,
+      ruolo: activeTenantUser.ruolo,
+      tenant_code: activeTenantUser.tenant_code || authContext.tenantCode || null,
       permissions: authContext.permissions,
     };
     return next();

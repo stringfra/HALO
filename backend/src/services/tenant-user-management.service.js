@@ -3,6 +3,7 @@ const {
   assignSystemRoleToUser,
   getTenantSystemRoleRecordByKey,
 } = require("./tenant-user-rbac.service");
+const { normalizeEmailIdentity } = require("../validation/input");
 
 function parsePositiveInt(value) {
   if (typeof value === "number" && Number.isInteger(value) && value > 0) {
@@ -103,6 +104,13 @@ async function resolveTenantUserAssignmentIds(client, studioId, roleKey, request
 }
 
 async function createTenantUser(client, { studioId, nome, email, passwordHash, ruolo, requestedRoleIds = [] }) {
+  const normalizedEmail = normalizeEmailIdentity(email);
+  if (!normalizedEmail) {
+    const error = new Error("Email utente non valida.");
+    error.code = "TENANT_USER_INVALID_EMAIL";
+    throw error;
+  }
+
   const assignmentIds = await resolveTenantUserAssignmentIds(
     client,
     studioId,
@@ -114,7 +122,7 @@ async function createTenantUser(client, { studioId, nome, email, passwordHash, r
     `INSERT INTO users (studio_id, nome, email, password_hash, ruolo)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING id`,
-    [studioId, nome, email, passwordHash, ruolo],
+    [studioId, nome, normalizedEmail, passwordHash, ruolo],
   );
 
   const userId = Number(result.rows[0]?.id);
@@ -163,8 +171,15 @@ async function updateTenantUserProfile(
   }
 
   if (updates.email !== undefined) {
+    const normalizedEmail = normalizeEmailIdentity(updates.email);
+    if (!normalizedEmail) {
+      const error = new Error("Email utente non valida.");
+      error.code = "TENANT_USER_INVALID_EMAIL";
+      throw error;
+    }
+
     fields.push(`email = $${index++}`);
-    values.push(updates.email);
+    values.push(normalizedEmail);
   }
 
   if (updates.nextRole !== undefined) {

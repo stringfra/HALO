@@ -6,27 +6,65 @@ function toPlainObject(record) {
 
 function serializeClient(record) {
   const entity = toPlainObject(record);
+  const id = entity.client_id ?? entity.id ?? null;
+  const firstName = entity.first_name ?? entity.nome ?? null;
+  const lastName = entity.last_name ?? entity.cognome ?? null;
+  const phone = entity.phone ?? entity.telefono ?? null;
+  const notes = entity.notes ?? entity.note ?? null;
+  const ownerUserId = entity.owner_user_id ?? entity.medico_id ?? null;
+  const ownerDisplayName = entity.owner_display_name ?? entity.medico_nome ?? null;
+  const createdAt = entity.created_at ?? entity.createdAt ?? null;
 
   return {
     ...entity,
-    client_id: entity.id ?? null,
-    owner_user_id: entity.medico_id ?? null,
-    owner_display_name: entity.medico_nome ?? null,
-    first_name: entity.nome ?? null,
-    last_name: entity.cognome ?? null,
+    id,
+    client_id: id,
+    first_name: firstName,
+    last_name: lastName,
+    phone,
+    notes,
+    owner_user_id: ownerUserId,
+    owner_display_name: ownerDisplayName,
+    created_at: createdAt,
+    createdAt,
+    nome: firstName,
+    cognome: lastName,
+    telefono: phone,
+    note: notes,
+    medico_id: ownerUserId,
+    medico_nome: ownerDisplayName,
   };
 }
 
 function serializeAppointment(record) {
   const entity = toPlainObject(record);
+  const id = entity.appointment_id ?? entity.id ?? null;
+  const clientId = entity.client_id ?? entity.paziente_id ?? null;
+  const appointmentDate = entity.appointment_date ?? entity.data ?? null;
+  const appointmentTime = entity.appointment_time ?? entity.ora ?? null;
+  const ownerDisplayName = entity.owner_display_name ?? entity.medico ?? null;
+  const appointmentStatus = entity.appointment_status ?? entity.stato ?? null;
+  const firstName = entity.first_name ?? entity.nome ?? null;
+  const lastName = entity.last_name ?? entity.cognome ?? null;
 
   return {
     ...entity,
-    appointment_id: entity.id ?? null,
-    client_id: entity.paziente_id ?? null,
-    owner_display_name: entity.medico ?? null,
-    appointment_status: entity.stato ?? null,
-    appointment_date: entity.data ?? null,
+    id,
+    appointment_id: id,
+    client_id: clientId,
+    appointment_date: appointmentDate,
+    appointment_time: appointmentTime,
+    owner_display_name: ownerDisplayName,
+    appointment_status: appointmentStatus,
+    first_name: firstName,
+    last_name: lastName,
+    paziente_id: clientId,
+    data: appointmentDate,
+    ora: appointmentTime,
+    medico: ownerDisplayName,
+    stato: appointmentStatus,
+    nome: firstName,
+    cognome: lastName,
   };
 }
 

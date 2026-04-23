@@ -1,8 +1,14 @@
 const express = require("express");
-const { pool } = require("../config/db");
-const { verifyToken, authorize, requirePermission } = require("../../middlewares/authMiddleware");
+const { verifyToken, requirePermission } = require("../../middlewares/authMiddleware");
 const { requireFeature } = require("../middleware/feature-flags");
 const { serializeAppointment } = require("../services/domain-aliases.service");
+const {
+  createAppointmentInLegacyStorage,
+  deleteAppointmentFromLegacyStorage,
+  findAssignedOwnerForClient,
+  listAppointmentsFromLegacyStorage,
+  updateAppointmentInLegacyStorage,
+} = require("../services/domain-entity-adapters.service");
 const {
   enqueueAppointmentSyncMutation,
   resolveDeleteAppointmentSyncHint,
@@ -31,8 +37,6 @@ const allowedKeys = [
   "owner_display_name",
   "appointment_status",
 ];
-const allRoles = ["ADMIN", "DENTISTA", "SEGRETARIO", "DIPENDENTE"];
-const adminSegretarioRoles = ["ADMIN", "SEGRETARIO"];
 
 async function enqueueSyncWithoutBlockingResponse({
   req,
@@ -81,30 +85,12 @@ function getTodayIsoLocal() {
 
 function resolveAppointmentPayload(body) {
   return {
-    paziente_id: body?.paziente_id ?? body?.client_id,
-    data: body?.data ?? body?.appointment_date,
-    ora: body?.ora ?? body?.appointment_time,
-    medico: body?.medico ?? body?.owner_display_name,
-    stato: body?.stato ?? body?.appointment_status,
+    client_id: body?.client_id ?? body?.paziente_id,
+    appointment_date: body?.appointment_date ?? body?.data,
+    appointment_time: body?.appointment_time ?? body?.ora,
+    owner_display_name: body?.owner_display_name ?? body?.medico,
+    appointment_status: body?.appointment_status ?? body?.stato,
   };
-}
-
-async function findPatientAssignedDentist(studioId, pazienteId) {
-  const result = await pool.query(
-    `SELECT p.id,
-            p.medico_id,
-            u.nome AS medico_nome
-     FROM pazienti p
-     LEFT JOIN users u ON u.id = p.medico_id
-                      AND u.studio_id = p.studio_id
-                      AND u.ruolo IN ('DENTISTA', 'DIPENDENTE')
-     WHERE p.id = $1
-       AND p.studio_id = $2
-     LIMIT 1`,
-    [pazienteId, studioId],
-  );
-
-  return result.rows[0] ?? null;
 }
 
 router.use(verifyToken);
@@ -113,30 +99,13 @@ router.use(requireFeature("agenda.enabled"));
 router.get("/", requirePermission("appointments.read"), async (req, res) => {
   try {
     const studioId = Number(req.user?.studio_id);
-    const params = [studioId];
-    let query = `SELECT a.id,
-                        a.paziente_id,
-                        p.nome,
-                        p.cognome,
-                        TO_CHAR(a.data, 'DD MM YYYY') AS data,
-                        a.ora,
-                        a.medico,
-                        a.stato
-                 FROM appuntamenti a
-                 LEFT JOIN pazienti p ON p.id = a.paziente_id
-                                      AND p.studio_id = a.studio_id
-                 WHERE a.studio_id = $1`;
+    const ownerUserId = isPractitionerRole(req.user?.ruolo) ? Number(req.user?.id) : null;
+    const appointments = await listAppointmentsFromLegacyStorage({
+      studioId,
+      ownerUserId,
+    });
 
-    if (isPractitionerRole(req.user?.ruolo)) {
-      params.push(req.user.id);
-      query += " AND p.medico_id = $2";
-    }
-
-    query += " ORDER BY a.data DESC, a.ora DESC, a.id DESC";
-
-    const result = await pool.query(query, params);
-
-    return res.status(200).json(result.rows.map(serializeAppointment));
+    return res.status(200).json(appointments.map(serializeAppointment));
   } catch (error) {
     return res.status(500).json({
       message: "Errore nel recupero appuntamenti.",
@@ -151,70 +120,67 @@ router.post("/", requirePermission("appointments.write"), async (req, res) => {
   }
 
   const payload = resolveAppointmentPayload(req.body);
-  const pazienteId = parsePositiveInt(payload?.paziente_id);
-  const data = parseDateDmyOrIso(payload?.data, { allowIso: true });
-  const ora = parseTime(payload?.ora);
-  const medico = normalizeRequiredText(payload?.medico, { min: 2, max: 120 });
-  const stato = parseEnum(payload?.stato, allowedStates, { allowUndefined: true });
+  const clientId = parsePositiveInt(payload?.client_id);
+  const appointmentDate = parseDateDmyOrIso(payload?.appointment_date, { allowIso: true });
+  const appointmentTime = parseTime(payload?.appointment_time);
+  const ownerDisplayName = normalizeRequiredText(payload?.owner_display_name, { min: 2, max: 120 });
+  const appointmentStatus = parseEnum(payload?.appointment_status, allowedStates, { allowUndefined: true });
 
-  if (!pazienteId || !data || !ora) {
+  if (!clientId || !appointmentDate || !appointmentTime) {
     return res.status(400).json({
-      message: "Campi richiesti: paziente_id, data DD MM YYYY, ora.",
+      message: "Campi richiesti: client_id, appointment_date DD MM YYYY, appointment_time.",
     });
   }
-  if (payload?.medico !== undefined && !medico) {
+  if (payload?.owner_display_name !== undefined && !ownerDisplayName) {
     return res.status(400).json({
-      message: "Medico non valido.",
+      message: "Owner display name non valido.",
     });
   }
-  if (data < getTodayIsoLocal()) {
+  if (appointmentDate < getTodayIsoLocal()) {
     return res.status(400).json({
       message: "Non puoi creare appuntamenti con data passata.",
     });
   }
-  if (stato === null) {
+  if (appointmentStatus === null) {
     return res.status(400).json({ message: "Stato non valido." });
   }
 
   try {
     const studioId = Number(req.user?.studio_id);
-    const patientAssignment = await findPatientAssignedDentist(studioId, pazienteId);
+    const clientAssignment = await findAssignedOwnerForClient({
+      studioId,
+      clientId,
+    });
 
-    if (!patientAssignment) {
+    if (!clientAssignment) {
       return res.status(400).json({
-        message: "Il paziente selezionato non esiste.",
+        message: "Il client selezionato non esiste.",
       });
     }
 
-    const resolvedMedico = patientAssignment.medico_nome ?? medico;
-    if (!resolvedMedico) {
+    const resolvedOwnerDisplayName = clientAssignment.owner_display_name ?? ownerDisplayName;
+    if (!resolvedOwnerDisplayName) {
       return res.status(400).json({
-        message: "Il paziente selezionato non ha un dottore assegnato.",
+        message: "Il client selezionato non ha un owner assegnato.",
       });
     }
 
-    const result = await pool.query(
-      `INSERT INTO appuntamenti (studio_id, paziente_id, data, ora, medico, stato)
-       SELECT $1, p.id, $3, $4, $5, COALESCE($6, 'in_attesa')
-       FROM pazienti p
-       WHERE p.id = $2
-         AND p.studio_id = $1
-       RETURNING id,
-                 paziente_id,
-                 TO_CHAR(data, 'DD MM YYYY') AS data,
-                 ora,
-                 medico,
-                 stato`,
-      [studioId, pazienteId, data, ora, resolvedMedico, stato],
-    );
+    const created = await createAppointmentInLegacyStorage({
+      studioId,
+      clientId,
+      appointmentDate,
+      appointmentTime,
+      ownerDisplayName: resolvedOwnerDisplayName,
+      appointmentStatus,
+    });
 
-    if (result.rowCount === 0) {
+    if (!created) {
       return res.status(400).json({
-        message: "Il paziente selezionato non esiste.",
+        message: "Il client selezionato non esiste.",
       });
     }
 
-    const createdAppointment = serializeAppointment(result.rows[0]);
+    const createdAppointment = serializeAppointment(created);
     await enqueueSyncWithoutBlockingResponse({
       req,
       studioId,
@@ -244,112 +210,79 @@ router.put("/:id", requirePermission("appointments.write"), async (req, res) => 
   }
 
   const payload = resolveAppointmentPayload(req.body);
-  const fields = [];
-  const values = [];
-  let index = 1;
+  const updates = {};
 
-  if (payload?.paziente_id !== undefined) {
-    const pazienteId = parsePositiveInt(payload.paziente_id);
-    if (!pazienteId) {
-      return res.status(400).json({ message: "paziente_id non valido." });
+  if (payload?.client_id !== undefined) {
+    const clientId = parsePositiveInt(payload.client_id);
+    if (!clientId) {
+      return res.status(400).json({ message: "client_id non valido." });
     }
-
-    const patientExists = await pool.query(
-      `SELECT 1
-       FROM pazienti
-       WHERE id = $1
-         AND studio_id = $2
-       LIMIT 1`,
-      [pazienteId, studioId],
-    );
-    if (patientExists.rowCount === 0) {
-      return res.status(400).json({
-        message: "Il paziente selezionato non esiste.",
-      });
-    }
-
-    fields.push(`paziente_id = $${index++}`);
-    values.push(pazienteId);
+    updates.client_id = clientId;
   }
 
-  if (payload?.data !== undefined) {
-    const data = parseDateDmyOrIso(payload.data, { allowIso: true });
-    if (!data) {
+  if (payload?.appointment_date !== undefined) {
+    const appointmentDate = parseDateDmyOrIso(payload.appointment_date, { allowIso: true });
+    if (!appointmentDate) {
       return res.status(400).json({
         message: "Data non valida. Formato richiesto DD MM YYYY o YYYY-MM-DD.",
       });
     }
-    if (data < getTodayIsoLocal()) {
+    if (appointmentDate < getTodayIsoLocal()) {
       return res.status(400).json({
         message: "Non puoi impostare una data passata.",
       });
     }
-    fields.push(`data = $${index++}`);
-    values.push(data);
+    updates.appointment_date = appointmentDate;
   }
 
-  if (payload?.ora !== undefined) {
-    const ora = parseTime(payload.ora);
-    if (!ora) {
+  if (payload?.appointment_time !== undefined) {
+    const appointmentTime = parseTime(payload.appointment_time);
+    if (!appointmentTime) {
       return res.status(400).json({
         message: "Ora non valida. Formato richiesto HH:mm o HH:mm:ss.",
       });
     }
-    fields.push(`ora = $${index++}`);
-    values.push(ora);
+    updates.appointment_time = appointmentTime;
   }
 
-  if (payload?.medico !== undefined) {
-    const medico = normalizeRequiredText(payload.medico, { min: 2, max: 120 });
-    if (!medico) {
+  if (payload?.owner_display_name !== undefined) {
+    const ownerDisplayName = normalizeRequiredText(payload.owner_display_name, { min: 2, max: 120 });
+    if (!ownerDisplayName) {
       return res.status(400).json({
-        message: "Medico non valido.",
+        message: "Owner display name non valido.",
       });
     }
-    fields.push(`medico = $${index++}`);
-    values.push(medico);
+    updates.owner_display_name = ownerDisplayName;
   }
 
-  if (payload?.stato !== undefined) {
-    const stato = parseEnum(payload.stato, allowedStates, { allowUndefined: false });
-    if (!stato) {
+  if (payload?.appointment_status !== undefined) {
+    const appointmentStatus = parseEnum(payload.appointment_status, allowedStates, { allowUndefined: false });
+    if (!appointmentStatus) {
       return res.status(400).json({ message: "Stato non valido." });
     }
-    fields.push(`stato = $${index++}`);
-    values.push(stato);
+    updates.appointment_status = appointmentStatus;
   }
 
-  if (fields.length === 0) {
+  if (Object.keys(updates).length === 0) {
     return res.status(400).json({
       message: "Nessun campo valido da aggiornare.",
     });
   }
 
-  values.push(appointmentId);
-  values.push(studioId);
-
   try {
-    const result = await pool.query(
-      `UPDATE appuntamenti
-       SET ${fields.join(", ")}
-       WHERE id = $${index}
-         AND studio_id = $${index + 1}
-       RETURNING id,
-                 paziente_id,
-                 TO_CHAR(data, 'DD MM YYYY') AS data,
-                 ora,
-                 medico,
-                 stato`,
-      values,
-    );
+    const updated = await updateAppointmentInLegacyStorage({
+      studioId,
+      appointmentId,
+      updates,
+    });
 
-    if (result.rowCount === 0) {
+    if (!updated) {
       return res.status(404).json({
         message: "Appuntamento non trovato.",
       });
     }
 
-    const updatedAppointment = serializeAppointment(result.rows[0]);
+    const updatedAppointment = serializeAppointment(updated);
     await enqueueSyncWithoutBlockingResponse({
       req,
       studioId,
@@ -360,6 +293,10 @@ router.put("/:id", requirePermission("appointments.write"), async (req, res) => 
 
     return res.status(200).json(updatedAppointment);
   } catch (error) {
+    if (error?.code === "APPOINTMENT_CLIENT_NOT_FOUND") {
+      return res.status(400).json({ message: error.message });
+    }
+
     return res.status(500).json({
       message: "Errore nell'aggiornamento appuntamento.",
       detail: error.message,
@@ -389,15 +326,12 @@ router.delete("/:id", requirePermission("appointments.write"), async (req, res) 
   }
 
   try {
-    const result = await pool.query(
-      `DELETE FROM appuntamenti
-       WHERE id = $1
-         AND studio_id = $2
-       RETURNING id`,
-      [appointmentId, studioId],
-    );
+    const deleted = await deleteAppointmentFromLegacyStorage({
+      studioId,
+      appointmentId,
+    });
 
-    if (result.rowCount === 0) {
+    if (!deleted) {
       return res.status(404).json({
         message: "Appuntamento non trovato.",
       });
@@ -418,8 +352,8 @@ router.delete("/:id", requirePermission("appointments.write"), async (req, res) 
 
     return res.status(200).json({
       message: "Appuntamento eliminato con successo.",
-      id: result.rows[0].id,
-      appointment_id: result.rows[0].id,
+      id: deleted.id,
+      appointment_id: deleted.appointment_id,
     });
   } catch (error) {
     return res.status(500).json({

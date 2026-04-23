@@ -8,6 +8,7 @@ export type AppSidebarItem = {
   href: string;
   roles?: UserRole[];
   icon?: string;
+  section?: string;
   badge?: string | number;
   expanded?: boolean;
   children?: AppSidebarItem[];

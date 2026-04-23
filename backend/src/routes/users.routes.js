@@ -4,10 +4,11 @@ const { pool } = require("../config/db");
 const { verifyToken, requirePermission } = require("../../middlewares/authMiddleware");
 const { serializeUser } = require("../services/domain-aliases.service");
 const { countTenantAdmins, createTenantUser, updateTenantUserProfile } = require("../services/tenant-user-management.service");
+const { listTenantAssignableSystemRoleKeys } = require("../services/platform-rbac-tools.service");
 const {
   hasOnlyKeys,
-  isValidEmail,
   isStrongPassword,
+  normalizeEmailIdentity,
   normalizeRequiredText,
   parsePositiveInt,
 } = require("../validation/input");
@@ -16,7 +17,6 @@ const router = express.Router();
 
 const createKeys = ["nome", "email", "password", "ruolo", "display_name", "role_key"];
 const updateKeys = createKeys;
-const allowedRoles = new Set(["ADMIN", "DENTISTA", "SEGRETARIO", "DIPENDENTE"]);
 
 function resolveUserPayload(body) {
   return {
@@ -29,22 +29,28 @@ function resolveUserPayload(body) {
 
 router.use(verifyToken);
 
+async function getAllowedRoleKeysForTenant(studioId) {
+  const roleKeys = await listTenantAssignableSystemRoleKeys(studioId);
+  return new Set(roleKeys);
+}
+
 router.get("/", requirePermission("users.read"), async (req, res) => {
-  const requestedRole =
-    typeof (req.query?.ruolo ?? req.query?.role_key) === "string"
-      ? String(req.query?.ruolo ?? req.query?.role_key)
-          .trim()
-          .toUpperCase()
-      : null;
-
-  if (requestedRole && !allowedRoles.has(requestedRole)) {
-    return res.status(400).json({
-      message: "Ruolo non valido.",
-    });
-  }
-
   try {
     const studioId = Number(req.user?.studio_id);
+    const allowedRoles = await getAllowedRoleKeysForTenant(studioId);
+    const requestedRole =
+      typeof (req.query?.ruolo ?? req.query?.role_key) === "string"
+        ? String(req.query?.ruolo ?? req.query?.role_key)
+            .trim()
+            .toUpperCase()
+        : null;
+
+    if (requestedRole && !allowedRoles.has(requestedRole)) {
+      return res.status(400).json({
+        message: "Ruolo non valido.",
+      });
+    }
+
     const params = [studioId];
     let query = `SELECT id,
                         nome,
@@ -81,18 +87,11 @@ router.post("/", requirePermission("users.write"), async (req, res) => {
 
   const payload = resolveUserPayload(req.body);
   const nome = normalizeRequiredText(payload?.nome, { min: 2, max: 120 });
-  const email = normalizeRequiredText(payload?.email, { min: 6, max: 255 });
+  const email = normalizeEmailIdentity(payload?.email);
   const password = normalizeRequiredText(payload?.password, { min: 8, max: 255 });
   const ruolo = typeof payload?.ruolo === "string" ? payload.ruolo.trim().toUpperCase() : "";
 
-  if (
-    !nome ||
-    !email ||
-    !isValidEmail(email) ||
-    !password ||
-    !isStrongPassword(password) ||
-    !allowedRoles.has(ruolo)
-  ) {
+  if (!nome || !email || !password || !isStrongPassword(password)) {
     return res.status(400).json({
       message:
         "Campi non validi. Password richiesta: minimo 8, maiuscola, minuscola, numero e simbolo.",
@@ -108,6 +107,14 @@ router.post("/", requirePermission("users.write"), async (req, res) => {
 
   try {
     const studioId = Number(req.user?.studio_id);
+    const allowedRoles = await getAllowedRoleKeysForTenant(studioId);
+
+    if (!allowedRoles.has(ruolo)) {
+      return res.status(400).json({
+        message: "Ruolo non valido per il tenant corrente.",
+      });
+    }
+
     const passwordHash = await bcrypt.hash(password, saltRounds);
     const client = await pool.connect();
 
@@ -145,6 +152,11 @@ router.post("/", requirePermission("users.write"), async (req, res) => {
       if (error?.code === "TENANT_SYSTEM_ROLE_NOT_AVAILABLE") {
         return res.status(409).json({
           message: "Ruolo di sistema tenant non disponibile.",
+        });
+      }
+      if (error?.code === "TENANT_USER_INVALID_EMAIL") {
+        return res.status(400).json({
+          message: "Email non valida.",
         });
       }
 
@@ -196,8 +208,8 @@ router.put("/:id", requirePermission("users.write"), async (req, res) => {
   }
 
   if (payload?.email !== undefined) {
-    const email = normalizeRequiredText(payload.email, { min: 6, max: 255 });
-    if (!email || !isValidEmail(email)) {
+    const email = normalizeEmailIdentity(payload.email);
+    if (!email) {
       return res.status(400).json({
         message: "Email non valida.",
       });
@@ -208,9 +220,10 @@ router.put("/:id", requirePermission("users.write"), async (req, res) => {
   if (payload?.ruolo !== undefined) {
     const ruolo =
       typeof payload.ruolo === "string" ? payload.ruolo.trim().toUpperCase() : "";
+    const allowedRoles = await getAllowedRoleKeysForTenant(studioId);
     if (!allowedRoles.has(ruolo)) {
       return res.status(400).json({
-        message: "Ruolo non valido.",
+        message: "Ruolo non valido per il tenant corrente.",
       });
     }
     nextRole = ruolo;
@@ -287,6 +300,11 @@ router.put("/:id", requirePermission("users.write"), async (req, res) => {
       if (error?.code === "TENANT_SYSTEM_ROLE_NOT_AVAILABLE") {
         return res.status(409).json({
           message: "Ruolo di sistema tenant non disponibile.",
+        });
+      }
+      if (error?.code === "TENANT_USER_INVALID_EMAIL") {
+        return res.status(400).json({
+          message: "Email non valida.",
         });
       }
       throw error;

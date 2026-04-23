@@ -34,7 +34,7 @@ function mergeTenantSettingsPatch(currentSettings, incomingSettings) {
   const next = { ...current };
 
   for (const [key, value] of Object.entries(incomingSettings)) {
-    if (["labels", "ui", "reminders", "activities"].includes(key)) {
+    if (["labels", "ui", "reminders", "activities", "workflow"].includes(key)) {
       next[key] = mergeNestedObject(current[key], value);
       continue;
     }

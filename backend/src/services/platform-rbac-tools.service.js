@@ -1,8 +1,16 @@
 const { pool } = require("../config/db");
-const { LEGACY_ROLE_PERMISSIONS, NEW_ACTIVITY_DEFAULT_SYSTEM_ROLES } = require("../config/multi-sector");
+const {
+  LEGACY_ROLE_PERMISSIONS,
+  NEW_ACTIVITY_DEFAULT_SYSTEM_ROLES,
+  getSupportedSystemRoleKeys,
+  getSystemRoleTemplate,
+} = require("../config/multi-sector");
 const { getTenantConfigById } = require("./tenant-config.service");
 
+const MANDATORY_SYSTEM_ROLE_KEYS = Object.freeze(["ADMIN"]);
+
 function normalizeSystemRoleKeys(value) {
+  const supportedRoleKeys = new Set(getSupportedSystemRoleKeys());
   if (!Array.isArray(value)) {
     return [];
   }
@@ -11,9 +19,23 @@ function normalizeSystemRoleKeys(value) {
     new Set(
       value
         .map((entry) => (typeof entry === "string" ? entry.trim().toUpperCase() : ""))
-        .filter((entry) => entry.length > 0),
+        .filter((entry) => entry.length > 0 && supportedRoleKeys.has(entry)),
     ),
   );
+}
+
+function withMandatorySystemRoles(roleKeys) {
+  const supportedRoleKeys = new Set(getSupportedSystemRoleKeys());
+  const normalizedRoleKeys = Array.isArray(roleKeys) ? roleKeys : [];
+  const merged = new Set(normalizedRoleKeys);
+
+  for (const roleKey of MANDATORY_SYSTEM_ROLE_KEYS) {
+    if (supportedRoleKeys.has(roleKey)) {
+      merged.add(roleKey);
+    }
+  }
+
+  return Array.from(merged);
 }
 
 function parsePositiveInt(value) {
@@ -30,16 +52,7 @@ function parsePositiveInt(value) {
 }
 
 function getSystemRoleDisplayName(roleKey) {
-  if (roleKey === "ADMIN") {
-    return "Administrator";
-  }
-  if (roleKey === "DENTISTA") {
-    return "Practitioner";
-  }
-  if (roleKey === "DIPENDENTE") {
-    return "Staff";
-  }
-  return "Coordinator";
+  return getSystemRoleTemplate(roleKey)?.display_name || "Role";
 }
 
 async function ensureDipendenteEnumValue(client) {
@@ -70,10 +83,16 @@ async function getTenantSystemRoleEntries(tenantId, client = pool) {
 
   const rawRoles = result.rows[0]?.settings_json?.roles;
   const normalizedRoleKeys = normalizeSystemRoleKeys(rawRoles);
-  const effectiveRoleKeys =
-    normalizedRoleKeys.length > 0 ? normalizedRoleKeys : [...NEW_ACTIVITY_DEFAULT_SYSTEM_ROLES];
+  const effectiveRoleKeys = withMandatorySystemRoles(
+    normalizedRoleKeys.length > 0 ? normalizedRoleKeys : [...NEW_ACTIVITY_DEFAULT_SYSTEM_ROLES],
+  );
 
   return effectiveRoleKeys.map((roleKey) => [roleKey, LEGACY_ROLE_PERMISSIONS[roleKey] || []]);
+}
+
+async function listTenantAssignableSystemRoleKeys(tenantId, client = pool) {
+  const entries = await getTenantSystemRoleEntries(tenantId, client);
+  return entries.map(([roleKey]) => roleKey);
 }
 
 async function ensureSystemRolesForTenant(client, tenantId) {
@@ -542,8 +561,10 @@ async function migrateTenantLegacyPractitionerRole(tenantId) {
 
 module.exports = {
   ensureSystemRolesForTenant,
+  getTenantSystemRoleEntries,
   getPlatformRbacHealthSnapshot,
   getTenantRbacConsistencySnapshot,
+  listTenantAssignableSystemRoleKeys,
   migrateTenantLegacyPractitionerRole,
   repairTenantRbacConsistency,
 };

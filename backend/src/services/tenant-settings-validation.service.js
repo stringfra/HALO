@@ -5,6 +5,7 @@ const ALLOWED_TOP_LEVEL_SETTINGS = new Set([
   "ui",
   "reminders",
   "activities",
+  "workflow",
 ]);
 
 const ALLOWED_LABEL_KEYS = new Set([
@@ -54,11 +55,21 @@ function validateRoles(value, errors) {
     return;
   }
 
+  let hasAdminRole = false;
   for (const [index, entry] of value.entries()) {
     const normalized = typeof entry === "string" ? entry.trim().toUpperCase() : "";
     if (!ALLOWED_ROLE_KEYS.has(normalized)) {
       pushError(errors, `settings.roles[${index}]`, "Ruolo non supportato.");
+      continue;
     }
+
+    if (normalized === "ADMIN") {
+      hasAdminRole = true;
+    }
+  }
+
+  if (!hasAdminRole) {
+    pushError(errors, "settings.roles", "Il ruolo ADMIN e obbligatorio.");
   }
 }
 
@@ -138,6 +149,36 @@ function validateActivities(value, errors) {
   }
 }
 
+function validateWorkflow(value, errors) {
+  if (!isPlainObject(value)) {
+    pushError(errors, "settings.workflow", "Deve essere un oggetto.");
+    return;
+  }
+
+  const allowedWorkflowKeys = new Set([
+    "client_assignment_mode",
+    "appointment_owner_source",
+    "billing_mode",
+  ]);
+
+  for (const [key, entry] of Object.entries(value)) {
+    if (!allowedWorkflowKeys.has(key)) {
+      pushError(errors, `settings.workflow.${key}`, "Chiave workflow non supportata.");
+      continue;
+    }
+
+    if (typeof entry !== "string") {
+      pushError(errors, `settings.workflow.${key}`, "Deve essere una stringa.");
+      continue;
+    }
+
+    const normalized = entry.trim();
+    if (normalized.length < 2 || normalized.length > 80) {
+      pushError(errors, `settings.workflow.${key}`, "Deve avere lunghezza 2-80 caratteri.");
+    }
+  }
+}
+
 function validateTenantSettings(settings) {
   const errors = [];
 
@@ -184,6 +225,11 @@ function validateTenantSettings(settings) {
 
     if (key === "activities") {
       validateActivities(value, errors);
+      continue;
+    }
+
+    if (key === "workflow") {
+      validateWorkflow(value, errors);
     }
   }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { loginWithPassword } from "@/features/auth/api";
@@ -16,7 +17,7 @@ function LoginContent() {
 
   useEffect(() => {
     if (getStoredSession()) {
-      router.replace("/dashboard");
+      router.replace("/");
     }
   }, [router]);
 
@@ -44,7 +45,7 @@ function LoginContent() {
 
     try {
       await loginWithPassword(email.trim(), password);
-      router.replace("/dashboard");
+      router.replace("/");
     } catch (submitError) {
       const message =
         submitError instanceof Error ? submitError.message : "Errore durante il login.";
@@ -131,6 +132,13 @@ function LoginContent() {
               {loading ? "Accesso in corso..." : "Accedi al gestionale"}
             </button>
           </form>
+
+          <p className="mt-4 text-sm text-[var(--ui-muted)]">
+            Non hai ancora un account?{" "}
+            <Link href="/signup" className="font-semibold text-[var(--ui-accent)]">
+              Crea nuova azienda
+            </Link>
+          </p>
         </div>
       </section>
     </main>

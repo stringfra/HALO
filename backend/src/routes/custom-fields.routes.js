@@ -9,6 +9,10 @@ const {
   saveCustomFieldValues,
   upsertCustomFieldDefinition,
 } = require("../services/custom-fields.service");
+const {
+  getEntityDynamicFormSchema,
+  listTenantDynamicFormSchemas,
+} = require("../services/dynamic-form-schema.service");
 const { parsePositiveInt } = require("../validation/input");
 
 const router = express.Router();
@@ -30,6 +34,39 @@ router.get("/definitions/:entityKey", requirePermission("settings.manage"), asyn
   } catch (error) {
     return res.status(500).json({
       message: "Errore nel recupero custom fields.",
+      detail: error.message,
+    });
+  }
+});
+
+router.get("/schemas", requirePermission("settings.manage"), async (req, res) => {
+  const studioId = Number(req.user?.studio_id);
+
+  try {
+    const schemas = await listTenantDynamicFormSchemas(studioId);
+    return res.status(200).json(schemas);
+  } catch (error) {
+    return res.status(500).json({
+      message: "Errore nel recupero schema dinamici.",
+      detail: error.message,
+    });
+  }
+});
+
+router.get("/schemas/:entityKey", requirePermission("settings.manage"), async (req, res) => {
+  const studioId = Number(req.user?.studio_id);
+  const entityKey = String(req.params?.entityKey || "").trim().toLowerCase();
+
+  if (!isValidEntityKey(entityKey)) {
+    return res.status(400).json({ message: "entityKey non valido." });
+  }
+
+  try {
+    const schema = await getEntityDynamicFormSchema(studioId, entityKey);
+    return res.status(200).json(schema);
+  } catch (error) {
+    return res.status(500).json({
+      message: "Errore nel recupero schema dinamico.",
       detail: error.message,
     });
   }

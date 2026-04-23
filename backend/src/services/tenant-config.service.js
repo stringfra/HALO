@@ -132,6 +132,10 @@ async function getTenantConfigById(studioId) {
     vertical_template: {
       key: verticalTemplate.key,
       name: verticalTemplate.name,
+      default_settings: verticalTemplate.default_settings,
+      default_labels: verticalTemplate.default_labels,
+      default_features: verticalTemplate.default_features,
+      default_modules: verticalTemplate.default_modules,
       default_roles: verticalTemplate.default_roles,
     },
   };
